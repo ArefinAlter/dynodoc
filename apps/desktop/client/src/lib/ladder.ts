@@ -4,7 +4,7 @@
 // page keeps only "stored" and the last four characters. In a hosted copy there is no model call
 // and a typed key stays in the tab's memory. Pure parts are tested in client/test/keys-ladder-hash.test.mjs.
 
-export type ProviderKind = 'anthropic' | 'openai' | 'google' | 'mistral' | 'deepseek' | 'qwen' | 'kimi' | 'glm' | 'ollama' | 'compat';
+export type ProviderKind = 'codex' | 'claude' | 'cursor' | 'antigravity' | 'anthropic' | 'openai' | 'google' | 'mistral' | 'deepseek' | 'qwen' | 'kimi' | 'glm' | 'ollama' | 'compat';
 
 export interface ProviderInfo {
   kind: ProviderKind;
@@ -15,6 +15,11 @@ export interface ProviderInfo {
 }
 
 export const PROVIDERS: ProviderInfo[] = [
+  { kind: 'codex', label: 'Codex (existing sign-in)', base: 'https://codex.local-agent.invalid/v1', model: 'default', needsKey: false },
+  { kind: 'claude', label: 'Claude Code (existing sign-in)', base: 'https://claude.local-agent.invalid/v1', model: 'default', needsKey: false },
+  { kind: 'cursor', label: 'Cursor (existing sign-in)', base: 'https://cursor.local-agent.invalid/v1', model: 'default', needsKey: false },
+  { kind: 'antigravity', label: 'Antigravity (existing sign-in)', base: 'https://antigravity.local-agent.invalid/v1', model: 'default', needsKey: false },
+
   { kind: 'anthropic', label: 'Anthropic', base: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', needsKey: true },
   { kind: 'openai', label: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-5', needsKey: true },
   { kind: 'google', label: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-pro', needsKey: true },

@@ -211,10 +211,10 @@ pub fn handle(app: &AppHandle, id: &str) {
         RELOAD => window::reload_focused(app),
         // Back to the client window, as it is (nothing is reloaded).
         CLIENT => window::focus_main(app),
-        // The configured server's own pages, in the web window (the client if none).
+        // The configured server's platform opens in the system browser.
         #[cfg(target_os = "macos")]
         WORKSPACE => match app.try_state::<AppState>().and_then(|s| s.server()) {
-            Some(server) => window::navigate_web(app, server.entry()),
+            Some(server) => window::open_external(app, &server.entry(), Source::Menu),
             None => window::show_launcher(app, None),
         },
         SUPPORT => {

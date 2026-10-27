@@ -1,3 +1,5 @@
+> 0.0.1c development: desktop is the workflow and synchronization manager. Editing belongs to Office/Google add-ins and extensions. The desktop workspace action opens the system browser; older embedded-workspace behavior documented below is historical. See decision 022 and `docs/INSTALLED-AGENTS.md`.
+
 # Dynodoc desktop app (Tauri 2)
 
 **0.0.1b (pre-alpha): the desktop app is software of its own.** One installer (Windows) or one file
@@ -149,13 +151,7 @@ header (the mark alone when the sidebar is closed) and by the command palette (C
 servers, Keyboard shortcuts, Web workspace, Reload (Ctrl+R), Developer tools (debug builds only), Dynodoc
 support, About, Quit. The window permissions (minimise, toggle maximise, close, start dragging, is-maximized,
 set-title) are granted to this window and to the bundled client only (`capabilities/window-controls.json`).
-**Web workspace** (the server pill in the top bar, or the menu) opens the server's own pages in a **separate
-window** with the system's frame and menu and a title that says it is the server's page
-("Dynodoc web workspace - host (the server's page)"). That window is in no capability at all, so a page from a
-server can never call a command, move the client window or draw over it. Its own menu has **Dynodoc client**
-(Ctrl+Shift+D, back to the client window), Open server in browser, Reload (Ctrl+R) and Help; closing the client
-window closes it too. Settings, Accounts keeps the launcher's own controls (choose a server, sign in with the
-browser or an emailed link, this computer's key), with the same ids, texts and commands. Phones open on the
+**Web workspace** (the server pill, menu or command palette) opens the platform in the system browser. The client remains the workflow manager. A separate view with no native capabilities is retained only for the existing sign-in handover and session cookie; platform navigation from that view opens externally and returns focus to the manager. Settings, Accounts keeps server selection and sign-in controls. Phones open on the
 configured server as before, in their one window. macOS keeps the system's frame and one menu bar (not built in
 this release). Hovering the maximise button does not open Windows 11 Snap Layouts: that needs the window to
 answer the system's hit test for the button, which means native code in the window procedure, and it was left

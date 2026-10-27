@@ -154,7 +154,20 @@ fn base_builder<'a>(
             );
             trace("navigation", url, &decision);
             match decision {
-                Decision::Allow => true,
+                Decision::Allow => {
+                    #[cfg(desktop)]
+                    if role == Role::Web && !nav::desktop_auth_page(url, server.as_ref()) {
+                        // This view holds the app's sign-in session only. Platform pages
+                        // belong in the browser; the workflow manager keeps its window.
+                        open_external(&navigation_app, url, Source::Page);
+                        if let Some(web) = navigation_app.get_webview_window(WEB) {
+                            let _ = web.hide();
+                        }
+                        focus_main(&navigation_app);
+                        return false;
+                    }
+                    true
+                }
                 Decision::OpenExternal => {
                     open_external(&navigation_app, url, Source::Page);
                     false
@@ -682,8 +695,12 @@ pub fn open_deep_link(app: &AppHandle, raw: &str) {
         .path()
         .and_then(|path| state.server().and_then(|s| s.join(&path)))
     {
-        // A page of the configured server opens in the web window; the client window stays the client.
-        Some(url) => navigate_web(app, url),
+        Some(url) => {
+            #[cfg(desktop)]
+            open_external(app, &url, Source::Page);
+            #[cfg(mobile)]
+            navigate_web(app, url);
+        }
         None => show_launcher(app, None),
     }
 }
@@ -988,8 +1005,8 @@ mod tests {
     }
 
     #[test]
-    fn the_servers_pages_open_in_the_web_window_and_never_in_the_client_window() {
-        // The finish page, a deep link's page and a same-server new window all go to the web window.
+    fn only_sign_in_uses_the_web_view_and_platform_links_leave_the_client() {
+        // Sign-in keeps its isolated session view; desktop document links use the browser.
         let finish = body("fn finish_browser_sign_in(");
         assert!(finish.contains("navigate_web(app, server.finish_url());"));
         assert!(
@@ -997,7 +1014,9 @@ mod tests {
             "the client window stays the client"
         );
         let open = body("pub fn open_deep_link(");
-        assert!(open.contains("Some(url) => navigate_web(app, url),"));
+        assert!(flat(open).contains("#[cfg(desktop)]open_external(app,&url,Source::Page);"));
+        assert!(flat(production())
+            .contains("role==Role::Web&&!nav::desktop_auth_page(url,server.as_ref())"));
         assert!(!open.contains("navigate_main(app, url)"));
         // `navigate_main` is for the launcher: every call in this file passes a launcher address (or,
         // on phones only, the server's entry for the one window).

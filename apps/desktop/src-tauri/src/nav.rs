@@ -174,6 +174,13 @@ pub fn needs_sign_in(url: &Url, server: Option<&ServerOrigin>) -> bool {
         && !url.query_pairs().any(|(name, _)| name == "token")
 }
 
+/// Desktop's isolated web view is for sign-in only; platform pages open externally.
+#[cfg_attr(not(desktop), allow(dead_code))]
+pub fn desktop_auth_page(url: &Url, server: Option<&ServerOrigin>) -> bool {
+    server.is_some_and(|s| s.matches(url))
+        && matches!(url.path(), "/login" | "/auth/verify" | "/app-signin/finish")
+}
+
 /// Is `url` the configured server's finish page, exactly as the shell opens it (no query, no
 /// fragment)? The one page the browser sign-in's fragment is handed to.
 pub fn is_finish_page(url: &Url, server: Option<&ServerOrigin>) -> bool {
@@ -1206,5 +1213,31 @@ mod tests {
         let marked = marker("https://example.org/");
         assert_eq!(redacted(&marked), "(click marker)");
         assert!(!redacted(&marked).contains(SECRET));
+    }
+}
+
+#[cfg(test)]
+mod desktop_manager_tests {
+    use super::*;
+    #[test]
+    fn platform_and_foreign_pages_are_not_embedded_authentication() {
+        let server = crate::server::parse_server_address("https://app.dynodoc.online").unwrap();
+        for path in ["/login", "/auth/verify?token=fixture", "/app-signin/finish"] {
+            assert!(desktop_auth_page(
+                &Url::parse(&format!("https://app.dynodoc.online{path}")).unwrap(),
+                Some(&server)
+            ));
+        }
+        for address in [
+            "https://app.dynodoc.online/workspace",
+            "https://app.dynodoc.online/projects/fixture",
+            "https://evil.invalid/login",
+            "https://app.dynodoc.online/app-signin/finish/extra",
+        ] {
+            assert!(!desktop_auth_page(
+                &Url::parse(address).unwrap(),
+                Some(&server)
+            ));
+        }
     }
 }

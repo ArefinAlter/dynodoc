@@ -62,7 +62,7 @@ const entry = (kind, o = {}) => {
 };
 
 test('the ladder lists the providers the brief names', () => {
-  assert.deepEqual(PROVIDERS.map((p) => p.kind), ['anthropic', 'openai', 'google', 'mistral', 'deepseek', 'qwen', 'kimi', 'glm', 'ollama', 'compat']);
+  assert.deepEqual(PROVIDERS.map((p) => p.kind), ['codex', 'claude', 'cursor', 'antigravity', 'anthropic', 'openai', 'google', 'mistral', 'deepseek', 'qwen', 'kimi', 'glm', 'ollama', 'compat']);
 });
 
 test('ladder checks: keys, plain http only to this computer, no credentials in the address', () => {
@@ -100,4 +100,13 @@ test('the chain rule links each hash to the one before it', () => {
   const b = chainHash(a, sha256('two'));
   assert.notEqual(a, b);
   assert.equal(b, sha256(`${a}:${sha256('two')}`));
+});
+
+
+test('existing agent sign-ins need no API key and remain separate ladder entries', () => {
+  for (const kind of ['codex','claude','cursor','antigravity']) {
+    const e=entry(kind,{keyHint:''});assert.deepEqual(validate([e]),[]);assert.equal(e.model,'default');
+    assert.equal(new URL(e.base).hostname,`${kind}.local-agent.invalid`);
+    assert.equal(active([e])?.kind,kind);
+  }
 });

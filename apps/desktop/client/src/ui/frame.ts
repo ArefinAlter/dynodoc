@@ -156,7 +156,7 @@ export function syncTitle(title: string): void {
 
 // ---- the application menu ---------------------------------------------------------------------
 
-/** Opens the web workspace: the configured server's own pages, in a window of their own. */
+/** Opens the web workspace: the configured server's own pages, in the system browser. */
 export function openWorkspace(): void {
   openServer()
     .then((address) => {
@@ -192,7 +192,7 @@ export function openAppMenu(anchor: HTMLElement): void {
     { label: 'Light or dark', icon: state.prefs.theme === 'dark' ? 'sun' : 'moon', shortcut: 'Ctrl+Shift+L', onSelect: () => { toggleTheme(); render(); } },
     { label: '', separator: true },
     ds?.server
-      ? { label: 'Web workspace', icon: 'globe', note: `${new URL(ds.server).host}, in its own window`, onSelect: openWorkspace }
+      ? { label: 'Web workspace', icon: 'globe', note: `${new URL(ds.server).host}, in your browser`, onSelect: openWorkspace }
       : { label: 'Web workspace', icon: 'globe', note: 'Choose a server in Accounts first', disabled: true },
     { label: '', separator: true },
     { label: 'Reload', icon: 'sync', shortcut: 'Ctrl+R', onSelect: reloadClient },

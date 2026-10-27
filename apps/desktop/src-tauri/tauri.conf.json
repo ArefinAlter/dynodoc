@@ -34,7 +34,7 @@
     "copyright": "Copyright Verne Ltd.",
     "category": "Productivity",
     "shortDescription": "Dynodoc: version control for documents, on your computer",
-    "longDescription": "Dynodoc keeps Word, Excel and PowerPoint files under version control: history, drafts, change requests and reviews. The workspace lives on this computer (a database and the engine start with the app, no server needed); sign in to a Dynodoc server to sync a project, and use your own model provider for the agent.",
+    "longDescription": "Dynodoc desktop manages document repositories, history, drafts, change requests, reviews and synchronization. Edit in Word, Excel, PowerPoint, Docs, Sheets or Slides using the add-ins and extensions. Local history works on this computer; connect a Dynodoc server to synchronize, and open the web workspace in your browser.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

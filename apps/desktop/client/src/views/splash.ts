@@ -29,7 +29,7 @@ function profileForm(): HTMLElement {
   const f = state.local.form;
   return card(
     h('h1', { class: 'splash-title' }, 'Welcome to Dynodoc'),
-    h('p', { class: 'muted' }, 'Everything here stays on this computer: your documents, their history and your reviews live in a database the app keeps for you. You do not need an account. You can sign in to a server later to share and sync.'),
+    h('p', { class: 'muted' }, 'Manage your document repositories, changes, history and sync here. Edit documents in Word, Excel, PowerPoint, Google Docs, Sheets or Slides using their Dynodoc add-in or extension. Local history works without an account; connect a server to share and sync.'),
     h(
       'form',
       {

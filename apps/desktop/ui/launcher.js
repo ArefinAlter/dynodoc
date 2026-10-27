@@ -1419,6 +1419,10 @@ Suggest, do not order.` }
 
   // client/src/lib/ladder.ts
   var PROVIDERS = [
+    { kind: "codex", label: "Codex (existing sign-in)", base: "https://codex.local-agent.invalid/v1", model: "default", needsKey: !1 },
+    { kind: "claude", label: "Claude Code (existing sign-in)", base: "https://claude.local-agent.invalid/v1", model: "default", needsKey: !1 },
+    { kind: "cursor", label: "Cursor (existing sign-in)", base: "https://cursor.local-agent.invalid/v1", model: "default", needsKey: !1 },
+    { kind: "antigravity", label: "Antigravity (existing sign-in)", base: "https://antigravity.local-agent.invalid/v1", model: "default", needsKey: !1 },
     { kind: "anthropic", label: "Anthropic", base: "https://api.anthropic.com", model: "claude-sonnet-4-5", needsKey: !0 },
     { kind: "openai", label: "OpenAI", base: "https://api.openai.com/v1", model: "gpt-5", needsKey: !0 },
     { kind: "google", label: "Google Gemini", base: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro", needsKey: !0 },
@@ -4484,7 +4488,7 @@ ${text3}` : out.push({ role, text: text3 });
         toggleTheme(), render();
       } },
       { label: "", separator: !0 },
-      ds?.server ? { label: "Web workspace", icon: "globe", note: `${new URL(ds.server).host}, in its own window`, onSelect: openWorkspace } : { label: "Web workspace", icon: "globe", note: "Choose a server in Accounts first", disabled: !0 },
+      ds?.server ? { label: "Web workspace", icon: "globe", note: `${new URL(ds.server).host}, in your browser`, onSelect: openWorkspace } : { label: "Web workspace", icon: "globe", note: "Choose a server in Accounts first", disabled: !0 },
       { label: "", separator: !0 },
       { label: "Reload", icon: "sync", shortcut: "Ctrl+R", onSelect: reloadClient }
     ];
@@ -6780,7 +6784,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
         { class: "about-hero card pad" },
         h("div", { class: "about-title" }, h("strong", null, "Dynodoc"), " ", pill("Pre-alpha release", "warning", { mono: !1 })),
         h("p", null, "Version control for documents, spreadsheets and presentations: edits in Word, Excel, PowerPoint and Google’s editors become change requests, are reviewed and merged, and land in a hash-chained history."),
-        h("p", { class: "muted small" }, `Client 0.0.1-beta${shell2 ? `, desktop app ${state.desktopVersion}` : ""}.`)
+        h("p", { class: "muted small" }, `Client 0.0.1-beta.1${shell2 ? `, desktop app ${state.desktopVersion}` : ""}.`)
       ),
       local2 ? section("This window shows the workspace on this computer", null, h(
         "p",
@@ -7004,8 +7008,8 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       )),
       serversSection(),
       section(
-        state.desktop ? "Web workspace in its own window" : "Dynodoc server",
-        state.desktop ? "Optional and separate from syncing: this opens a server’s own web workspace in a window of its own (the system’s frame, marked as the server’s page, with no access to this app), with its own sign-in kept by that window, and holds this computer’s signing key for the Office add-ins." : "Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.",
+        state.desktop ? "Web workspace in your browser" : "Dynodoc server",
+        state.desktop ? "Optional and separate from syncing: this opens the server’s web workspace in your system browser. This desktop app manages document workflow and sync; editing happens in Office and Google applications through the add-ins and extensions." : "Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.",
         state.desktop ? slot : notice("info", "Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.")
       )
     ];
@@ -7299,7 +7303,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     return [
       section(
         "Provider ladder",
-        desktop ? "Bring your own key. A new thread uses the first enabled entry that is complete; a thread can pick another in its composer. Requests go from this computer straight to the provider, and only after you have seen what would be sent and allowed that address once." : "Bring your own key. The agent would use the first enabled entry that is complete. A hosted copy calls no model: the ladder is configured and checked, and the agent’s replies are prepared.",
+        desktop ? "Use an API key or a supported installed agent’s existing sign-in. A new thread uses the first enabled entry that is complete; a thread can pick another in its composer. Requests go from this computer straight to the provider, and only after you have seen what would be sent and allowed that address once." : "Bring your own key. The agent would use the first enabled entry that is complete. A hosted copy calls no model: the ladder is configured and checked, and the agent’s replies are prepared.",
         notice("info", desktop ? `Keys are kept in ${cfg?.keys_where ?? "the operating system’s credential store"}. They are never written to the preferences file, a log or this window: after you store one, only “stored” and its last four characters are shown.` : "Keys stay in this tab’s memory: never stored in the browser, never shown again (only “stored” and the last four characters), and never sent anywhere."),
         desktop && cfg?.keys_locked ? h(
           "div",
@@ -7348,7 +7352,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
               field("Model", input(e.model, (v) => {
                 e.model = v;
               }, { id: `lm-${e.id}` })),
-              field("Base address", input(e.base, (v) => {
+              ["codex", "claude", "cursor", "antigravity"].includes(e.kind) ? field("Account", h("span", { class: "muted small" }, "Uses the sign-in saved by the installed agent.")) : field("Base address", input(e.base, (v) => {
                 e.base = v;
               }, { id: `lb-${e.id}` })),
               info.needsKey ? field("API key", e.keyHint ? h("div", { class: "key-stored" }, pill(`stored ····${e.keyHint}`, "success"), button("Forget", { size: "sm", variant: "ghost", onClick: () => forget(e) })) : h(
@@ -7358,12 +7362,12 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
                   keyDraft[e.id] = ev.target.value;
                 } }),
                 button("Store", { size: "sm", id: `lks-${e.id}`, onClick: () => store(e) })
-              )) : field("API key", h("span", { class: "muted small" }, "None: Ollama runs on this computer."))
+              )) : field(e.kind === "ollama" ? "API key" : "Account", h("span", { class: "muted small" }, e.kind === "ollama" ? "None: Ollama runs on this computer." : "Uses the installed agent’s own sign-in. Sign in there first. Your plan limits apply; content can leave this computer."))
             ),
             desktop ? h(
               "div",
               { class: "ladder-consent small" },
-              consent && consent.host === host ? [pill(`allowed: ${consent.host}`, "success"), button("Withdraw", { size: "sm", variant: "ghost", onClick: () => {
+              consent && consent.host === host ? [pill(`allowed: ${host.includes(".local-agent.invalid") ? info.label : consent.host}`, "success"), button("Withdraw", { size: "sm", variant: "ghost", onClick: () => {
                 setConsent(e.id, null, !1);
               } })] : h("span", { class: "muted" }, consent ? `Allowed for ${consent.host}; the address changed, so you are asked again before the next send.` : "Not allowed yet: before the first send you see exactly what would go to this address, and decide.")
             ) : null,
@@ -7618,7 +7622,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     let f = state.local.form;
     return card(
       h("h1", { class: "splash-title" }, "Welcome to Dynodoc"),
-      h("p", { class: "muted" }, "Everything here stays on this computer: your documents, their history and your reviews live in a database the app keeps for you. You do not need an account. You can sign in to a server later to share and sync."),
+      h("p", { class: "muted" }, "Manage your document repositories, changes, history and sync here. Edit documents in Word, Excel, PowerPoint, Google Docs, Sheets or Slides using their Dynodoc add-in or extension. Local history works without an account; connect a server to share and sync."),
       h(
         "form",
         {
@@ -7745,7 +7749,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       toggleTheme(), render();
     } }), isLive() || out.push({ id: "reset", label: "Reset the sample project", group: "Advanced", icon: "revert", run: () => {
       resetSample(), toast("success", "Sample data reset");
-    } }), state.desktop && !isLive() && out.push({ id: "visitor", label: "Start a sample workspace on the pre-alpha server", group: "Account", icon: "globe", run: () => void startVisitor() }), isLive() && out.push({ id: "reload", label: "Read everything from the server again", group: "Account", icon: "sync", run: () => void refresh() }), isLive() && out.push({ id: "signout", label: "Sign out of the server", group: "Account", icon: "user", run: () => void signOut() }), state.desktop && out.push({ id: "server", label: "Open my server’s web workspace (its own window)", group: "Account", icon: "globe", keywords: "web workspace server browser", run: openWorkspace }), state.desktop && (out.push({ id: "app.reload", label: "Reload the app", group: "App", icon: "sync", shortcut: "Ctrl+R", run: reloadClient }), desktopState()?.devtools && out.push({ id: "app.devtools", label: "Open developer tools", group: "App", icon: "advanced", shortcut: "F12", run: openDevtools }), frameless() && out.push({ id: "app.quit", label: "Quit Dynodoc", group: "App", icon: "x", shortcut: "Alt+F4", run: quit })), out;
+    } }), state.desktop && !isLive() && out.push({ id: "visitor", label: "Start a sample workspace on the pre-alpha server", group: "Account", icon: "globe", run: () => void startVisitor() }), isLive() && out.push({ id: "reload", label: "Read everything from the server again", group: "Account", icon: "sync", run: () => void refresh() }), isLive() && out.push({ id: "signout", label: "Sign out of the server", group: "Account", icon: "user", run: () => void signOut() }), state.desktop && out.push({ id: "server", label: "Open my server’s web workspace in the browser", group: "Account", icon: "globe", keywords: "web workspace server browser", run: openWorkspace }), state.desktop && (out.push({ id: "app.reload", label: "Reload the app", group: "App", icon: "sync", shortcut: "Ctrl+R", run: reloadClient }), desktopState()?.devtools && out.push({ id: "app.devtools", label: "Open developer tools", group: "App", icon: "advanced", shortcut: "F12", run: openDevtools }), frameless() && out.push({ id: "app.quit", label: "Quit Dynodoc", group: "App", icon: "x", shortcut: "Alt+F4", run: quit })), out;
   }
   function runCommand(cmd) {
     switch (cmd) {

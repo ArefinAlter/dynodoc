@@ -114,7 +114,7 @@ async function connect(address: string, errorId: string, button: HTMLElement, wo
   return true;
 }
 
-/** Opens the saved server's web workspace in its own window (the same command as "Use this address"). */
+/** Opens the saved server's web workspace in the system browser (the same command as "Use this address"). */
 export async function openServer(): Promise<string | null> {
   if (!invoke || !current || !current.server) return null;
   try {
