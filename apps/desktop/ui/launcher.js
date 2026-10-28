@@ -1423,6 +1423,7 @@ Suggest, do not order.` }
     { kind: "claude", label: "Claude Code (existing sign-in)", base: "https://claude.local-agent.invalid/v1", model: "default", needsKey: !1 },
     { kind: "cursor", label: "Cursor (existing sign-in)", base: "https://cursor.local-agent.invalid/v1", model: "default", needsKey: !1 },
     { kind: "antigravity", label: "Antigravity (existing sign-in)", base: "https://antigravity.local-agent.invalid/v1", model: "default", needsKey: !1 },
+    { kind: "grok", label: "Grok Build (separate sign-in)", base: "https://grok.local-agent.invalid/v1", model: "default", needsKey: !1 },
     { kind: "anthropic", label: "Anthropic", base: "https://api.anthropic.com", model: "claude-sonnet-4-5", needsKey: !0 },
     { kind: "openai", label: "OpenAI", base: "https://api.openai.com/v1", model: "gpt-5", needsKey: !0 },
     { kind: "google", label: "Google Gemini", base: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro", needsKey: !0 },
@@ -7427,7 +7428,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
               field("Model", input(e.model, (v) => {
                 e.model = v;
               }, { id: `lm-${e.id}` })),
-              ["codex", "claude", "cursor", "antigravity"].includes(e.kind) ? field("Account", h("span", { class: "muted small" }, "Uses the sign-in saved by the installed agent.")) : field("Base address", input(e.base, (v) => {
+              ["codex", "claude", "cursor", "antigravity", "grok"].includes(e.kind) ? field("Account", h("span", { class: "muted small" }, e.kind === "grok" ? "Set GROK_HOME to <your home>/.verne/local-agents/grok and run grok login once. Grok Build owns this separate sign-in." : "Uses the sign-in saved by the installed agent.")) : field("Base address", input(e.base, (v) => {
                 e.base = v;
               }, { id: `lb-${e.id}` })),
               info.needsKey ? field("API key", e.keyHint ? h("div", { class: "key-stored" }, pill(`stored ····${e.keyHint}`, "success"), button("Forget", { size: "sm", variant: "ghost", onClick: () => forget(e) })) : h(

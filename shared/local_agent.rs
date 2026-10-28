@@ -11,14 +11,14 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
 const MAX_REQUEST: usize = 2 * 1024 * 1024;
 const MAX_RESPONSE: usize = 2 * 1024 * 1024;
 
 /// The reserved endpoint is intercepted locally; it is never requested over HTTP.
 pub fn agent_for_url(url: &str) -> Option<&'static str> {
-    ["codex", "claude", "cursor", "antigravity"]
+    ["codex", "claude", "cursor", "antigravity", "grok"]
         .into_iter()
         .find(|name| {
             let prefix = format!("https://{name}.local-agent.invalid/");
@@ -47,10 +47,16 @@ pub enum Error {
     NotSubscription,
     /// The installed agent's own policy could allow tools outside the product gate.
     ToolPolicy,
+    /// Grok needs its own official sign-in in the isolated Verne profile.
+    GrokSetup,
+    /// The isolated Grok profile contains configuration that could execute tools.
+    GrokProfile,
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Self::GrokSetup => "Grok Build requires a separate official sign-in. Set GROK_HOME to <your home>/.verne/local-agents/grok, then run grok login. This app never copies another profile’s credentials.",
+            Self::GrokProfile => "The isolated Grok profile contains unsupported configuration. Keep this profile dedicated to Verne; hooks, plugins, MCP and custom settings cannot be enabled here.",
             Self::ToolPolicy => "Before using Antigravity here, set toolPermission to strict in its CLI settings (~/.gemini/antigravity-cli/settings.json). This app will not send a request while the CLI can approve tools independently.",
             Self::NotSubscription => "Sign in to the installed agent with your subscription account. Its current sign-in is not a verified subscription connection.",
             Self::Missing => "Install this provider's CLI and sign in to your subscription, then try again.",
@@ -72,6 +78,9 @@ fn candidates(program: &str) -> Vec<PathBuf> {
     if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
         let home = PathBuf::from(home);
         dirs.extend([home.join(".local/bin"), home.join(".cargo/bin")]);
+        if program == "grok" {
+            dirs.push(home.join(".grok/bin"));
+        }
     }
     if let Some(appdata) = std::env::var_os("APPDATA") {
         dirs.push(PathBuf::from(appdata).join("npm"));
@@ -91,6 +100,7 @@ fn program(agent: &str) -> Result<PathBuf, Error> {
         "claude" => "claude",
         "cursor" => "agent",
         "antigravity" => "agy",
+        "grok" => "grok",
         _ => return Err(Error::Unsupported),
     };
     candidates(name)
@@ -574,12 +584,309 @@ async fn check_subscription(path: &Path, agent: &str) -> Result<(), Error> {
         .map_err(|_| Error::Timeout)?
 }
 
+// Verified against xai-org/grok-build 2bdd1d6a (2026-10-29). See the
+// protocol notes in docs/acceptance/grok-subscription.md before changing this.
+fn grok_profile() -> Value {
+    // Upstream rejects an initially empty curated toolset. Seed one known tool,
+    // then remove it with the final deny filter. No default tools may be injected.
+    json!({
+        "name":"verne-inference", "description":"Inference for Verne's closed tool table",
+        "promptMode":"full", "toolConfig":{"tools":[{"id":"GrokBuild:read_file"}]},
+        "injectDefaultTools":false, "discoverSkills":false, "inheritSkills":false,
+        "agentsMd":false, "skills":[], "mcpServers":[], "mcpInheritance":"none",
+        "disallowedTools":["GrokBuild:read_file", "search_tool", "use_tool", "Agent"],
+        "maxTurns":1
+    })
+}
+
+fn grok_home() -> Result<PathBuf, Error> {
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or(Error::GrokSetup)?;
+    let path = PathBuf::from(home).join(".verne/local-agents/grok");
+    if !path.is_dir() {
+        return Err(Error::GrokSetup);
+    }
+    check_grok_home(&path)?;
+    Ok(path)
+}
+
+fn check_grok_home(path: &Path) -> Result<(), Error> {
+    // Inspect names and file types only, never the credential contents. Reject
+    // executable configuration rather than trying to sanitize someone else's files.
+    if std::fs::symlink_metadata(path)
+        .map_err(|_| Error::GrokSetup)?
+        .file_type()
+        .is_symlink()
+    {
+        return Err(Error::GrokProfile);
+    }
+    for entry in std::fs::read_dir(path).map_err(|_| Error::GrokProfile)? {
+        let entry = entry.map_err(|_| Error::GrokProfile)?;
+        let kind = entry.file_type().map_err(|_| Error::GrokProfile)?;
+        let name = entry.file_name();
+        let name = name.to_str().ok_or(Error::GrokProfile)?;
+        let inert_file = [
+            "auth.json",
+            "auth.json.lock",
+            "bundle-manifest.json",
+            "version",
+        ]
+        .contains(&name)
+            && kind.is_file();
+        let inert_dir = [
+            "logs",
+            "sessions",
+            "telemetry",
+            "cache",
+            "crashes",
+            "bundled",
+        ]
+        .contains(&name)
+            && kind.is_dir();
+        if kind.is_symlink() || !(inert_file || inert_dir) {
+            return Err(Error::GrokProfile);
+        }
+    }
+    if !path.join("auth.json").is_file() {
+        return Err(Error::GrokSetup);
+    }
+    Ok(())
+}
+
+fn grok_environment(cmd: &mut tokio::process::Command, scratch: &Path, home: &Path) {
+    client_environment(cmd);
+    // Only the CLI sees its dedicated authentication store. Vendor compatibility,
+    // project discovery and shell startup see an empty temporary home instead.
+    for key in [
+        "HOME",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "XDG_CONFIG_HOME",
+        "XDG_STATE_HOME",
+        "XDG_DATA_HOME",
+    ] {
+        cmd.env(key, scratch);
+    }
+    for key in ["CODEX_HOME", "CLAUDE_CONFIG_DIR"] {
+        cmd.env_remove(key);
+    }
+    cmd.env("GROK_HOME", home)
+        .env("GROK_AGENT", "verne-inference");
+    for key in [
+        "GROK_AGENT_DASHBOARD",
+        "GROK_SUBAGENTS",
+        "GROK_MEMORY",
+        "GROK_GOAL",
+        "GROK_WEB_FETCH",
+        "GROK_WRITE_FILE",
+        "GROK_LSP_TOOLS",
+    ] {
+        cmd.env(key, "0");
+    }
+    cmd.env("GROK_DISABLE_AUTOUPDATER", "1");
+}
+
+async fn acp_send<W: tokio::io::AsyncWrite + Unpin>(
+    writer: &mut W,
+    value: Value,
+) -> Result<(), Error> {
+    let mut bytes = serde_json::to_vec(&value).map_err(|_| Error::Protocol)?;
+    bytes.push(b'\n');
+    writer.write_all(&bytes).await.map_err(|_| Error::Failed)?;
+    writer.flush().await.map_err(|_| Error::Failed)
+}
+
+async fn acp_receive<R: tokio::io::AsyncBufRead + Unpin, W: tokio::io::AsyncWrite + Unpin>(
+    reader: &mut R,
+    writer: &mut W,
+    id: u64,
+    remaining: &mut usize,
+    text: &mut String,
+    session: Option<&str>,
+) -> Result<Value, Error> {
+    loop {
+        let mut bytes = Vec::new();
+        let n = (&mut *reader)
+            .take((*remaining + 1) as u64)
+            .read_until(b'\n', &mut bytes)
+            .await
+            .map_err(|_| Error::Protocol)?;
+        if n == 0 {
+            return Err(Error::Protocol);
+        }
+        if n > *remaining {
+            return Err(Error::TooLarge);
+        }
+        *remaining -= n;
+        let value: Value = serde_json::from_slice(&bytes).map_err(|_| Error::Protocol)?;
+        if value["jsonrpc"] != "2.0" {
+            return Err(Error::Protocol);
+        }
+        if value.get("method").is_some() && value.get("id").is_some() {
+            let reply = if value["method"] == "session/request_permission" {
+                json!({"jsonrpc":"2.0","id":value["id"],"result":{"outcome":{"outcome":"cancelled"}}})
+            } else {
+                json!({"jsonrpc":"2.0","id":value["id"],"error":{"code":-32601,"message":"Client capability unavailable"}})
+            };
+            acp_send(writer, reply).await?;
+            return Err(Error::GrokProfile);
+        }
+        if value["id"].as_u64() == Some(id) {
+            if value.get("error").is_some() {
+                return Err(Error::Failed);
+            }
+            return value.get("result").cloned().ok_or(Error::Protocol);
+        }
+        if value["method"] == "session/update" {
+            let update = &value["params"]["update"];
+            match update["sessionUpdate"].as_str() {
+                Some("agent_message_chunk") => {
+                    if session.is_none() || value["params"]["sessionId"].as_str() != session {
+                        return Err(Error::Protocol);
+                    }
+                    if update["content"]["type"] != "text" {
+                        return Err(Error::Protocol);
+                    }
+                    text.push_str(update["content"]["text"].as_str().ok_or(Error::Protocol)?);
+                }
+                Some("tool_call" | "tool_call_update") => return Err(Error::GrokProfile),
+                _ => {}
+            }
+        } else if value.get("id").is_some() {
+            return Err(Error::Protocol);
+        }
+    }
+}
+
+async fn grok_protocol<R: tokio::io::AsyncRead + Unpin, W: tokio::io::AsyncWrite + Unpin>(
+    reader: R,
+    mut writer: W,
+    cwd: &Path,
+    input: &str,
+) -> Result<String, Error> {
+    let mut reader = tokio::io::BufReader::new(reader);
+    let mut remaining = MAX_RESPONSE;
+    let mut text = String::new();
+    acp_send(&mut writer, json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+        "protocolVersion":1, "clientInfo":{"name":"verne","version":"0.1"},
+        "clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}
+    }})).await?;
+    let init = acp_receive(&mut reader, &mut writer, 1, &mut remaining, &mut text, None).await?;
+    if init["protocolVersion"] != 1 {
+        return Err(Error::Protocol);
+    }
+    if !init["authMethods"]
+        .as_array()
+        .is_some_and(|a| a.iter().any(|v| v["id"] == "cached_token"))
+    {
+        return Err(Error::GrokSetup);
+    }
+    acp_send(
+        &mut writer,
+        json!({"jsonrpc":"2.0","id":2,"method":"authenticate","params":{
+            "methodId":"cached_token", "_meta":{"headless":true}
+        }}),
+    )
+    .await?;
+    acp_receive(&mut reader, &mut writer, 2, &mut remaining, &mut text, None)
+        .await
+        .map_err(|e| {
+            if e == Error::Failed {
+                Error::GrokSetup
+            } else {
+                e
+            }
+        })?;
+    acp_send(
+        &mut writer,
+        json!({"jsonrpc":"2.0","id":3,"method":"session/new","params":{
+            "cwd":cwd, "mcpServers":[], "_meta":{"yoloMode":false,"autoMode":false}
+        }}),
+    )
+    .await?;
+    let session = acp_receive(&mut reader, &mut writer, 3, &mut remaining, &mut text, None).await?;
+    let session = session["sessionId"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() <= 512)
+        .ok_or(Error::Protocol)?;
+    acp_send(
+        &mut writer,
+        json!({"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{
+            "sessionId":session, "prompt":[{"type":"text","text":input}]
+        }}),
+    )
+    .await?;
+    let result = acp_receive(
+        &mut reader,
+        &mut writer,
+        4,
+        &mut remaining,
+        &mut text,
+        Some(session),
+    )
+    .await?;
+    if result["stopReason"] != "end_turn" || text.is_empty() {
+        return Err(Error::Protocol);
+    }
+    Ok(text)
+}
+
+async fn run_grok(path: &Path, body: &Value, timeout: Duration) -> Result<Value, Error> {
+    let home = grok_home()?;
+    let model = body["model"].as_str().unwrap_or("default");
+    // Reuse the same model grammar as every other local adapter.
+    command_args("claude", model)?;
+    let input = prompt(body)?;
+    let scratch = Scratch::new()?;
+    let profile = scratch.0.join("verne-inference.md");
+    let content = format!(
+        "---\n{}\n---\nReturn only the response requested by the client. Do not execute tools.\n",
+        grok_profile()
+    );
+    std::fs::write(&profile, content).map_err(|_| Error::Failed)?;
+    let mut cmd = tokio::process::Command::new(path);
+    cmd.args([
+        "--no-auto-update",
+        "agent",
+        "--no-leader",
+        "--agent-profile",
+    ])
+    .arg(profile);
+    if model != "default" && !model.is_empty() {
+        cmd.args(["--model", model]);
+    }
+    cmd.arg("stdio")
+        .current_dir(&scratch.0)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    grok_environment(&mut cmd, &scratch.0, &home);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    let mut child = cmd.spawn().map_err(|_| Error::Missing)?;
+    let _job = supervise_tree(&child)?;
+    let reader = child.stdout.take().ok_or(Error::Failed)?;
+    let writer = child.stdin.take().ok_or(Error::Failed)?;
+    let text = tokio::time::timeout(timeout, grok_protocol(reader, writer, &scratch.0, &input))
+        .await
+        .map_err(|_| Error::Timeout)??;
+    // ACP is long-lived; a completed request closes our process tree, rather than
+    // leaving an agent running. Usage is omitted until ACP exposes verified totals.
+    envelope(text, Value::Null, body)
+}
+
 async fn run_with(
     path: &Path,
     agent: &str,
     body: &Value,
     timeout: Duration,
 ) -> Result<Value, Error> {
+    if agent == "grok" {
+        return run_grok(path, body, timeout).await;
+    }
     check_tool_policy(agent)?;
     check_subscription(path, agent).await?;
     let args = command_args(agent, body["model"].as_str().unwrap_or("default"))?;
@@ -654,6 +961,159 @@ pub async fn complete(url: &str, body: &Value, timeout: Duration) -> Result<Valu
 mod tests {
     use super::*;
     #[test]
+    fn grok_profile_has_no_effective_tools_or_inherited_context() {
+        let p = grok_profile();
+        assert_eq!(
+            p["toolConfig"]["tools"],
+            json!([{"id":"GrokBuild:read_file"}])
+        );
+        assert!(p["disallowedTools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t == "GrokBuild:read_file"));
+        for key in [
+            "injectDefaultTools",
+            "discoverSkills",
+            "inheritSkills",
+            "agentsMd",
+        ] {
+            assert_eq!(p[key], false);
+        }
+        assert_eq!(p["mcpInheritance"], "none");
+        assert_eq!(p["maxTurns"], 1);
+        assert_eq!(
+            agent_for_url("https://grok.local-agent.invalid/v1"),
+            Some("grok")
+        );
+    }
+
+    #[test]
+    fn grok_profile_checks_names_without_reading_credentials() {
+        let s = Scratch::new().unwrap();
+        assert_eq!(check_grok_home(&s.0), Err(Error::GrokSetup));
+        std::fs::write(s.0.join("auth.json"), "ZEUS-CANARY-not-json-not-read").unwrap();
+        assert_eq!(check_grok_home(&s.0), Ok(()));
+        for name in [
+            "config.toml",
+            "hooks-paths",
+            "plugins",
+            "mcp.json",
+            "settings.json",
+        ] {
+            let path = s.0.join(name);
+            std::fs::write(&path, "ZEUS-CANARY-not-read").unwrap();
+            assert_eq!(check_grok_home(&s.0), Err(Error::GrokProfile));
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    async fn grok_fixture(scenario: &'static str) -> Result<String, Error> {
+        let (client, server) = tokio::io::duplex(8192);
+        let (reader, writer) = tokio::io::split(client);
+        let server = tokio::spawn(async move {
+            let (read, mut write) = tokio::io::split(server);
+            let mut read = tokio::io::BufReader::new(read);
+            for id in 1..=4 {
+                let mut line = String::new();
+                read.read_line(&mut line).await.unwrap();
+                let request: Value = serde_json::from_str(&line).unwrap();
+                assert_eq!(request["id"], id);
+                let result = match id {
+                    1 => {
+                        assert_eq!(request["method"], "initialize");
+                        assert_eq!(request["params"]["clientCapabilities"]["terminal"], false);
+                        assert_eq!(
+                            request["params"]["clientCapabilities"]["fs"]["writeTextFile"],
+                            false
+                        );
+                        let method = if scenario == "api-key" {
+                            "xai.api_key"
+                        } else {
+                            "cached_token"
+                        };
+                        json!({"protocolVersion":1,"authMethods":[{"id":method}]})
+                    }
+                    2 => {
+                        assert_eq!(request["method"], "authenticate");
+                        assert_eq!(request["params"]["methodId"], "cached_token");
+                        assert_eq!(request["params"]["_meta"]["headless"], true);
+                        json!({})
+                    }
+                    3 => {
+                        assert_eq!(request["method"], "session/new");
+                        assert_eq!(request["params"]["mcpServers"], json!([]));
+                        assert_eq!(request["params"]["_meta"]["yoloMode"], false);
+                        json!({"sessionId":"test-session"})
+                    }
+                    _ => {
+                        assert_eq!(request["method"], "session/prompt");
+                        assert_eq!(request["params"]["prompt"][0]["text"], "fixture input");
+                        if scenario == "permission" || scenario == "filesystem" {
+                            let method = if scenario == "permission" {
+                                "session/request_permission"
+                            } else {
+                                "fs/read_text_file"
+                            };
+                            acp_send(
+                                &mut write,
+                                json!({"jsonrpc":"2.0","id":900,"method":method,"params":{}}),
+                            )
+                            .await
+                            .unwrap();
+                            let mut denied = String::new();
+                            read.read_line(&mut denied).await.unwrap();
+                            let denied: Value = serde_json::from_str(&denied).unwrap();
+                            if scenario == "permission" {
+                                assert_eq!(denied["result"]["outcome"]["outcome"], "cancelled");
+                            } else {
+                                assert_eq!(denied["error"]["code"], -32601);
+                            }
+                            return;
+                        }
+                        if scenario == "oversize" {
+                            let _ = write.write_all(&vec![b'x'; MAX_RESPONSE + 1]).await;
+                            return;
+                        }
+                        if scenario == "malformed" {
+                            write.write_all(b"not-json\n").await.unwrap();
+                            return;
+                        }
+                        let update = if scenario == "tool" {
+                            json!({"sessionUpdate":"tool_call"})
+                        } else {
+                            json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"fixture answer"}})
+                        };
+                        acp_send(&mut write,json!({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"test-session","update":update}})).await.unwrap();
+                        json!({"stopReason":if scenario == "truncated" { "max_tokens" } else { "end_turn" }})
+                    }
+                };
+                let _ =
+                    acp_send(&mut write, json!({"jsonrpc":"2.0","id":id,"result":result})).await;
+                if scenario == "api-key" {
+                    return;
+                }
+            }
+        });
+        let result = grok_protocol(reader, writer, Path::new("fixture"), "fixture input").await;
+        server.await.unwrap();
+        result
+    }
+
+    #[tokio::test]
+    async fn grok_acp_authentication_and_completion_are_bounded_and_closed() {
+        assert_eq!(grok_fixture("success").await.unwrap(), "fixture answer");
+        assert_eq!(grok_fixture("api-key").await, Err(Error::GrokSetup));
+        for scenario in ["permission", "filesystem", "tool"] {
+            assert_eq!(grok_fixture(scenario).await, Err(Error::GrokProfile));
+        }
+        for scenario in ["malformed", "truncated"] {
+            assert_eq!(grok_fixture(scenario).await, Err(Error::Protocol));
+        }
+        assert_eq!(grok_fixture("oversize").await, Err(Error::TooLarge));
+    }
+
+    #[test]
     fn only_reserved_exact_origins_are_local() {
         assert_eq!(
             agent_for_url("https://codex.local-agent.invalid/v1/chat/completions"),
@@ -664,7 +1124,7 @@ mod tests {
             "https://codex.local-agent.invalid.evil/",
             "https://evil/codex.local-agent.invalid/",
             "https://codex.local-agent.invalid@evil/",
-            "https://grok.local-agent.invalid/",
+            "https://grok.local-agent.invalid.evil/",
         ] {
             assert_eq!(agent_for_url(url), None);
         }

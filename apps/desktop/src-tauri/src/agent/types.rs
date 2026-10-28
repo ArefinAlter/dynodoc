@@ -15,6 +15,7 @@ pub enum Kind {
     Claude,
     Cursor,
     Antigravity,
+    Grok,
     Anthropic,
     Openai,
     Google,
@@ -47,7 +48,12 @@ impl Kind {
     pub fn needs_key(self) -> bool {
         !matches!(
             self,
-            Kind::Ollama | Kind::Codex | Kind::Claude | Kind::Cursor | Kind::Antigravity
+            Kind::Ollama
+                | Kind::Codex
+                | Kind::Claude
+                | Kind::Cursor
+                | Kind::Antigravity
+                | Kind::Grok
         )
     }
 

@@ -1,4 +1,4 @@
-> 0.0.1c development: desktop is the workflow and synchronization manager. Editing belongs to Office/Google add-ins and extensions. The desktop workspace action opens the system browser; older embedded-workspace behavior documented below is historical. See decision 022 and `docs/INSTALLED-AGENTS.md`.
+> 0.1.0-alpha.1: desktop is the workflow and synchronization manager. Editing belongs to Office/Google add-ins and extensions. The desktop workspace action opens the system browser; older embedded-workspace behavior documented below is historical. See decisions [022](../../docs/decisions/022-desktop-workflow-manager.md) and [023](../../docs/decisions/023-linked-node-identities.md), the [installed agents guide](../../docs/INSTALLED-AGENTS.md), and [alpha acceptance](../../docs/ACCEPTANCE-0.1.0-alpha.1.md).
 
 # Dynodoc desktop app (Tauri 2)
 

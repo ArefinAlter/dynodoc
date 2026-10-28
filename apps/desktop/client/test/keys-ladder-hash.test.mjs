@@ -62,13 +62,15 @@ const entry = (kind, o = {}) => {
 };
 
 test('the ladder lists the providers the brief names', () => {
-  assert.deepEqual(PROVIDERS.map((p) => p.kind), ['codex', 'claude', 'cursor', 'antigravity', 'anthropic', 'openai', 'google', 'mistral', 'deepseek', 'qwen', 'kimi', 'glm', 'ollama', 'compat']);
+  assert.deepEqual(PROVIDERS.map((p) => p.kind), ['codex', 'claude', 'cursor', 'antigravity', 'grok', 'anthropic', 'openai', 'google', 'mistral', 'deepseek', 'qwen', 'kimi', 'glm', 'ollama', 'compat']);
 });
 
 test('ladder checks: keys, plain http only to this computer, no credentials in the address', () => {
   assert.deepEqual(validate([entry('anthropic')]), []);
   assert.match(validate([entry('openai', { keyHint: '' })])[0].message, /needs a key/);
   assert.deepEqual(validate([entry('ollama', { keyHint: '' })]), []);
+  assert.deepEqual(validate([entry('grok', { keyHint: '' })]), []);
+  assert.match(PROVIDERS.find(p => p.kind === 'grok').label, /separate sign-in/);
   assert.match(validate([entry('ollama', { base: 'http://10.0.0.5:11434' })])[0].message, /Plain http/);
   assert.match(validate([entry('openai', { base: 'https://u:p@api.example.org/v1' })])[0].message, /No user name/);
   assert.match(validate([entry('openai', { base: 'not a url' })])[0].message, /not a URL/);
