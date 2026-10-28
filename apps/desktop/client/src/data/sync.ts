@@ -1,8 +1,8 @@
 // Syncing a project on this computer with the same project on a server (decision 020).
 //
 // Both sides are Dynodoc engines, and a file is the same thing on both: nodes with fields. Each
-// node has an id that the engine never reuses, so a file pushed from here to a server (or pulled
-// the other way) keeps its node ids, and from then on the two copies can be compared node by node.
+// node has an engine-global id. A new document copy gets new IDs and a saved per-link mapping;
+// existing node IDs and history never change. Comparisons use the local side's namespace.
 // This module does the comparing and the writing:
 //
 //   - a file the other side does not have is created there, from the nodes of the side that has it;
@@ -23,10 +23,15 @@
 // No network here: every request goes through a Transport (the app's commands, or a fake in tests).
 import type { Reply, Transport } from './remote.ts';
 import type { Nodes, RNode } from './remote-map.ts';
+import { checkedIds, inverseIds, mapNodes, pairedIds, type NodeIds } from './sync-ids.ts';
 
 export type Op = Record<string, unknown>;
 
 export interface LinkFile {
+  /** Local engine node ID to remote engine node ID; absent on legacy identity-preserving links. */
+  nodeIds?: NodeIds;
+  /** Saved before the first content write; partial creation can resume without another document. */
+  creating?: 'local' | 'remote';
   remoteDocId: string;
   /** The revision of each side when the two last had the same content. */
   localSeq: number;
@@ -300,6 +305,7 @@ function clip(s: string, n = 160): string {
 export type Action = 'same' | 'send' | 'receive' | 'both' | 'conflict' | 'add-remote' | 'add-local' | 'missing-remote' | 'missing-local' | 'waiting' | 'needs-review';
 
 export interface Item {
+  nodeIds?: NodeIds;
   action: Action;
   title: string;
   kind: string;
@@ -340,11 +346,19 @@ export async function planSync(sides: Sides, link: Link, picks: Record<string, P
   const [lf, rf] = await Promise.all([listFiles(sides.local, sides.localProjectId), listFiles(sides.remote, link.remoteProjectId)]);
   const items: Item[] = [];
   const claimed = new Set<string>();
+  const creatingLocal = new Set<string>();
+  for (const [localId, m] of Object.entries(link.files)) {
+    if (!m.creating) continue;
+    creatingLocal.add(localId); claimed.add(m.remoteDocId);
+    const source = await readDoc(m.creating === 'remote' ? sides.local : sides.remote, m.creating === 'remote' ? localId : m.remoteDocId);
+    items.push({ action: m.creating === 'remote' ? 'add-remote' : 'add-local', title: source.title, kind: source.kind, localId, remoteId: m.remoteDocId, ...(m.creating === 'remote' ? {local: source} : {remote: source}), nodeIds: checkedIds(m.nodeIds), toLocal: [], toRemote: [], conflicts: [] });
+  }
   for (const f of lf) {
+    if (creatingLocal.has(f.id)) continue;
     const m = link.files[f.id];
     if (!m) {
       const doc = await readDoc(sides.local, f.id);
-      items.push({ action: 'add-remote', title: f.title, kind: doc.kind, localId: f.id, local: doc, toRemote: diffNodes({}, doc.nodes), toLocal: [], conflicts: [] });
+      items.push({ action: 'add-remote', title: f.title, kind: doc.kind, localId: f.id, local: doc, nodeIds: pairedIds({}, [doc.nodes], []), toRemote: diffNodes({}, doc.nodes), toLocal: [], conflicts: [] });
       continue;
     }
     claimed.add(m.remoteDocId);
@@ -363,7 +377,7 @@ export async function planSync(sides: Sides, link: Link, picks: Record<string, P
       continue;
     }
     const doc = await readDoc(sides.remote, r.id);
-    items.push({ action: 'add-local', title: r.title, kind: doc.kind, remoteId: r.id, remote: doc, toRemote: [], toLocal: diffNodes({}, doc.nodes), conflicts: [] });
+    items.push({ action: 'add-local', title: r.title, kind: doc.kind, remoteId: r.id, remote: doc, nodeIds: pairedIds({}, [], [doc.nodes]), toRemote: [], toLocal: diffNodes({}, doc.nodes), conflicts: [] });
   }
   return counted(items);
 }
@@ -373,9 +387,13 @@ async function planPair(sides: Sides, lf: FileInfo, rf: FileInfo, m: LinkFile, p
   const localMoved = lf.latest !== m.localSeq;
   const remoteMoved = rf.latest !== m.remoteSeq;
   if (!localMoved && !remoteMoved) return base;
-  const [l, r] = await Promise.all([readDoc(sides.local, lf.id), readDoc(sides.remote, rf.id)]);
+  const [l, rawRemote] = await Promise.all([readDoc(sides.local, lf.id), readDoc(sides.remote, rf.id)]);
   const lBase = localMoved ? await nodesThrough(sides.local, lf.id, m.localSeq) : l.nodes;
-  const rBase = remoteMoved ? await nodesThrough(sides.remote, rf.id, m.remoteSeq) : r.nodes;
+  const rawBase = remoteMoved ? await nodesThrough(sides.remote, rf.id, m.remoteSeq) : rawRemote.nodes;
+  const nodeIds = pairedIds(m.nodeIds, [l.nodes, lBase], [rawRemote.nodes, rawBase]);
+  const reverse = inverseIds(nodeIds);
+  const r = { ...rawRemote, nodes: mapNodes(rawRemote.nodes, reverse) };
+  const rBase = mapNodes(rawBase, reverse);
   const lc = changesOf(lBase, l.nodes);
   const rc = changesOf(rBase, r.nodes);
   const label = (id: string) => nodeText(l.nodes[id] ?? r.nodes[id]) ? clip(nodeText(l.nodes[id] ?? r.nodes[id]), 60) : `${(l.nodes[id] ?? r.nodes[id])?.type ?? 'item'}`;
@@ -390,9 +408,9 @@ async function planPair(sides: Sides, lf: FileInfo, rf: FileInfo, m: LinkFile, p
     return clip(plain(v) || (v === undefined || v === null ? '(empty)' : canon(v)));
   };
   const { merged, conflicts } = merge3(lBase, lc, rc, picks, describe, label);
-  const out: Item = { ...base, local: l, remote: r, conflicts };
+  const out: Item = { ...base, local: l, remote: r, conflicts, nodeIds };
   if (conflicts.some((c) => !c.pick)) return { ...out, action: 'conflict', note: `${conflicts.filter((c) => !c.pick).length} change${conflicts.filter((c) => !c.pick).length === 1 ? ' is' : 's are'} in conflict. Choose a side for each.` };
-  const toRemote = diffNodes(r.nodes, merged);
+  const toRemote = diffNodes(rawRemote.nodes, mapNodes(merged, nodeIds));
   const toLocal = diffNodes(l.nodes, merged);
   out.toRemote = toRemote;
   out.toLocal = toLocal;
@@ -435,13 +453,20 @@ export async function writeOps(t: Transport, docId: string, ops: Op[], baseSeq: 
   return seq;
 }
 
-async function createDoc(t: Transport, projectId: string, title: string, kind: string, ops: Op[]): Promise<{ id: string; seq: number }> {
-  const doc = body(await t.apiSend('POST', 'documents', { title: title.slice(0, 200) || 'Untitled' }), 'create a file');
-  const id = String(doc.id);
+async function finishCreation(t: Transport, id: string, projectId: string, kind: string, desired: Nodes): Promise<number> {
+  const current = await readDoc(t, id);
+  // A prefix from an interrupted creation is safe to finish. Changes to an already written node
+  // belong to a person and must never be overwritten by a replay of the initial copy.
+  for (const [key, node] of Object.entries(current.nodes)) {
+    const expected = desired[key];
+    if (!expected || !same(fieldsOf(node), fieldsOf(expected)) || node.type !== expected.type || node.pos !== expected.pos || (node.parent_id ?? null) !== (expected.parent_id ?? null) || Boolean(node.deleted) !== Boolean(expected.deleted)) {
+      throw new SyncError('The partially copied file changed. Review it before continuing this link.');
+    }
+  }
   body(await t.apiSend('POST', `documents/${id}/metadata`, { settings: { kind } }), 'describe the file');
-  const seq = await writeOps(t, id, ops, 0);
+  const seq = await writeOps(t, id, diffNodes(current.nodes, desired), current.seq);
   body(await t.apiSend('POST', `documents/${id}/location`, { space_id: projectId }), 'put the file in the project');
-  return { id, seq };
+  return seq;
 }
 
 export interface Done {
@@ -460,6 +485,8 @@ export interface Done {
  *  others. */
 export interface Notes {
   host: string;
+  /** Persist link IDs/mappings before writes and after each completed file. Native callers supply it. */
+  onCheckpoint?: () => Promise<void>;
   /** Called after a write, to keep a message for the revisions it made (the engine records changes, not messages). */
   onNote?: (docId: string, fromSeq: number, toSeq: number, summary: string, description: string, on: 'local' | 'remote') => Promise<void>;
 }
@@ -472,23 +499,37 @@ export async function applyPlan(sides: Sides, link: Link, plan: Plan, o: Notes =
         // Nothing to write; the two files agree at their latest revisions.
         const m = link.files[item.localId];
         if (m) {
+          if (item.nodeIds) m.nodeIds = checkedIds(item.nodeIds);
           const [lf, rf] = [item.local?.seq, item.remote?.seq];
           if (lf !== undefined) m.localSeq = lf;
           if (rf !== undefined) m.remoteSeq = rf;
+          await o.onCheckpoint?.();
         }
         done.unchanged += 1;
       } else if (item.action === 'add-remote' && item.local && item.localId) {
-        const made = await createDoc(sides.remote, link.remoteProjectId, item.title, item.kind, item.toRemote);
-        link.files[item.localId] = { remoteDocId: made.id, localSeq: item.local.seq, remoteSeq: made.seq };
-        await o.onNote?.(made.id, 1, made.seq, 'Sent from a computer', `Created from the file "${item.title}" on another computer.`, 'remote');
+        const nodeIds = pairedIds(item.nodeIds ?? {}, [item.local.nodes], []);
+        const id = item.remoteId ?? String(body(await sides.remote.apiSend('POST', 'documents', {title:item.title.slice(0,200)||'Untitled'}), 'create a file').id);
+        const m: LinkFile = link.files[item.localId] = {remoteDocId:id, localSeq:0, remoteSeq:0, nodeIds, creating:'remote'};
+        await o.onCheckpoint?.();
+        const seq = await finishCreation(sides.remote, id, link.remoteProjectId, item.kind, mapNodes(item.local.nodes, nodeIds));
+        m.localSeq = item.local.seq; m.remoteSeq = seq; delete m.creating;
+        await o.onCheckpoint?.();
+        await o.onNote?.(id, 1, seq, 'Sent from a computer', `Created from the file "${item.title}" on another computer.`, 'remote');
         done.created += 1;
       } else if (item.action === 'add-local' && item.remote && item.remoteId) {
-        const made = await createDoc(sides.local, sides.localProjectId, item.title, item.kind, item.toLocal);
-        link.files[made.id] = { remoteDocId: item.remoteId, localSeq: made.seq, remoteSeq: item.remote.seq };
-        await o.onNote?.(made.id, 1, made.seq, `Received from ${o.host}`.slice(0, 200), `Copied from the file "${item.title}" on ${o.host}.`, 'local');
+        const nodeIds = pairedIds(item.nodeIds ?? {}, [], [item.remote.nodes]);
+        const id = item.localId ?? String(body(await sides.local.apiSend('POST', 'documents', {title:item.title.slice(0,200)||'Untitled'}), 'create a file').id);
+        const m: LinkFile = link.files[id] = {remoteDocId:item.remoteId, localSeq:0, remoteSeq:0, nodeIds, creating:'local'};
+        await o.onCheckpoint?.();
+        const seq = await finishCreation(sides.local, id, sides.localProjectId, item.kind, mapNodes(item.remote.nodes, inverseIds(nodeIds)));
+        m.localSeq = seq; m.remoteSeq = item.remote.seq; delete m.creating;
+        await o.onCheckpoint?.();
+        await o.onNote?.(id, 1, seq, `Received from ${o.host}`.slice(0, 200), `Copied from the file "${item.title}" on ${o.host}.`, 'local');
         done.created += 1;
       } else if ((item.action === 'send' || item.action === 'receive' || item.action === 'both') && item.localId && item.remoteId && item.local && item.remote) {
         const m = link.files[item.localId];
+        m.nodeIds = checkedIds(item.nodeIds);
+        await o.onCheckpoint?.();
         let rSeq = item.remote.seq;
         let lSeq = item.local.seq;
         if (item.toRemote.length) {
@@ -515,6 +556,7 @@ export async function applyPlan(sides: Sides, link: Link, plan: Plan, o: Notes =
         m.localSeq = lSeq;
         m.remoteSeq = rSeq;
         delete m.pending;
+        await o.onCheckpoint?.();
       } else if (item.action === 'conflict') {
         done.needs += 1;
         done.held.push({ title: item.title, why: item.note ?? 'In conflict.' });
@@ -531,9 +573,12 @@ export async function applyPlan(sides: Sides, link: Link, plan: Plan, o: Notes =
 
 /** Sends what changed in a file to the server as a change request (for a server whose rules do not
  *  allow writing to the main line). Nothing is written to either main line. */
-export async function sendForReview(sides: Sides, link: Link, item: Item, who: string): Promise<{ requestId: string }> {
+export async function sendForReview(sides: Sides, link: Link, item: Item, who: string, onCheckpoint?: () => Promise<void>): Promise<{ requestId: string }> {
   if (!item.localId || !item.remoteId || !item.remote || !item.local) throw new SyncError('That file is not linked.');
   const m = link.files[item.localId];
+  if (!m) throw new SyncError('That file is not linked.');
+  m.nodeIds = checkedIds(item.nodeIds);
+  await onCheckpoint?.();
   const made = body(
     await sides.remote.apiSend('POST', `documents/${item.remoteId}/change-requests`, {
       name: `Changes from ${who}`.slice(0, 120),

@@ -28,7 +28,7 @@ const parts = {
 };
 for (const [name, path] of Object.entries(parts)) if (!existsSync(path)) { console.error(`package-portable: ${name} is missing: ${path}`); process.exit(1); }
 
-const release = version === '0.0.1-beta.1' ? '0.0.1c' : version.replace('-beta', 'b').replace('-alpha', 'a');
+const release = version === '0.0.1-beta.1' ? '0.0.1c' : version;
 const label = `Dynodoc_${release}_windows-x64-portable`;
 const work = join(out, label);
 rmSync(work, { recursive: true, force: true });
@@ -40,7 +40,7 @@ cpSync(parts.pg, join(work, 'pg'), { recursive: true });
 cpSync(parts.notices, join(work, 'notices'), { recursive: true });
 writeFileSync(join(work, 'dynodoc-data', 'README.txt'), 'Everything this copy of Dynodoc keeps (settings, the workspace with its database, the web view\'s data) is in this folder.\r\nDelete the folder to make the app use the per-user folders instead; copy the whole Dynodoc folder to move it.\r\n');
 writeFileSync(join(work, 'README-portable.txt'), [
-  'Dynodoc portable (pre-alpha)',
+  'Dynodoc portable (alpha)',
   '',
   'Run Dynodoc.exe. Keep the other files beside it (engine-api.exe, engine-cli.exe, pg and notices).',
   'Windows 10 or 11, x64. It needs WebView2, which Windows 11 has.',

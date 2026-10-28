@@ -7,7 +7,7 @@ name = "dynodoc-desktop"
 # The app version: tauri.conf.json has no "version" and falls back to this on desktop. Android's
 # Tauri command line does not fall back, so tauri.android.conf.json repeats it (a test keeps the
 # two equal; change both together).
-version = "0.0.1-beta.1"
+version = "0.1.0-alpha.1"
 description = "Dynodoc desktop: a workflow, history and synchronization manager for document add-ins."
 edition = "2021"
 license-file = "../../../LICENSE"
