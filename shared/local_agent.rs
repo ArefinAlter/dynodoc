@@ -79,7 +79,8 @@ fn candidates(program: &str) -> Vec<PathBuf> {
         let home = PathBuf::from(home);
         dirs.extend([home.join(".local/bin"), home.join(".cargo/bin")]);
         if program == "grok" {
-            dirs.push(home.join(".grok/bin"));
+            dirs.insert(0, home.join(".grok/bin"));
+            dirs.insert(1, home.join(".verne/local-agents/grok/bin"));
         }
     }
     if let Some(appdata) = std::env::var_os("APPDATA") {
