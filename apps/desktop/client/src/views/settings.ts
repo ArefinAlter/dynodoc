@@ -111,7 +111,7 @@ function accounts(): Child {
       state.desktop
         ? 'Optional and separate from syncing: this opens the server’s web workspace in your system browser. This desktop app manages document workflow and sync; editing happens in Office and Google applications through the add-ins and extensions.'
         : 'Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.',
-      state.desktop ? slot : notice('info', 'Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.'),
+      state.desktop ? slot : notice('info', 'Alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.'),
     ),
   ];
 }
@@ -405,7 +405,7 @@ function providers(): Child {
             iconButton('trash', 'Remove', () => { dropEntry(e); state.keys.delete(e.id); p().ladder = list.filter((x) => x !== e); render(); })),
           h('div', { class: 'ladder-fields' },
             field('Model', input(e.model, (v) => { e.model = v; }, { id: `lm-${e.id}` })),
-            ['codex','claude','cursor','antigravity'].includes(e.kind) ? field('Account', h('span', { class: 'muted small' }, 'Uses the sign-in saved by the installed agent.')) : field('Base address', input(e.base, (v) => { e.base = v; }, { id: `lb-${e.id}` })),
+            ['codex','claude','cursor','antigravity','grok'].includes(e.kind) ? field('Account', h('span', { class: 'muted small' }, e.kind === 'grok' ? 'Set GROK_HOME to <your home>/.verne/local-agents/grok and run grok login once. Grok Build owns this separate sign-in.' : 'Uses the sign-in saved by the installed agent.')) : field('Base address', input(e.base, (v) => { e.base = v; }, { id: `lb-${e.id}` })),
             info.needsKey
               ? field('API key', e.keyHint
                   ? h('div', { class: 'key-stored' }, pill(`stored ····${e.keyHint}`, 'success'), button('Forget', { size: 'sm', variant: 'ghost', onClick: () => forget(e) }))

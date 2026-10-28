@@ -280,6 +280,7 @@ export async function syncNow(localProjectId: string): Promise<void> {
     const plan = await S.planSync(sides, l, picksFor(localProjectId));
     const done = await S.applyPlan(sides, l, plan, {
       host,
+      onCheckpoint: saveLinks,
       onNote: async (docId, from, to, summaryText, description, on) => {
         try {
           await (on === 'local' ? local() : remoteOf(l.accountId)).svcSend('POST', 'notes', { document_id: docId, branch: 'main', from_seq: from, to_seq: to, kind: 'revision', summary: summaryText.slice(0, 200), description: description.slice(0, 4000) });
@@ -310,7 +311,7 @@ export async function sendForReview(localProjectId: string, localDocId: string):
   const item = planOf(localProjectId)?.items.find((i) => i.localId === localDocId);
   if (!l || !item) return;
   try {
-    await S.sendForReview(sidesFor(localProjectId, l), l, item, state.local.profile?.name ?? 'a computer');
+    await S.sendForReview(sidesFor(localProjectId, l), l, item, state.local.profile?.name ?? 'a computer', saveLinks);
     await saveLinks();
     toast('success', 'Sent for review', `The changes to ${item.title} are a change request on ${accountOf(l.accountId)?.host ?? 'the server'}. A person there merges it; the next sync here picks the result up.`);
     await checkSync(localProjectId);

@@ -1,9 +1,10 @@
 // Syncing a project on this computer with a server (data/sync.ts): files made on one side appear
-// on the other with the same node ids, changes that do not touch the same field go both ways, the
+// on the other with mapped node identities, changes that do not touch the same field go both ways, the
 // same field changed on both sides waits for a person's choice, nothing is written twice, and a
 // server whose rules refuse a direct write gets the changes as a change request.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { checkedIds, inverseIds, mapNodes } from '../src/data/sync-ids.ts';
 import { applyEvent } from '../src/data/remote-map.ts';
 import { applyPlan, canon, changesOf, chunkOps, diffNodes, listFiles, newLink, planSync, sendForReview } from '../src/data/sync.ts';
 
@@ -62,6 +63,9 @@ function engine(name, { review = false } = {}) {
         const d = find(m[1]);
         if (review) return reply(403, { error: 'forbidden' });
         if (bodyIn.base_seq !== d.events.length) return reply(409, { error: 'conflict' });
+        const created = bodyIn.ops.filter(p => p.type === 'NodeCreated').map(p => p.node_id);
+        const allIds = new Set([...docs.values()].flatMap(doc => doc.events.filter(e => e.payload.type === 'NodeCreated').map(e => e.payload.node_id)));
+        if (created.some(id => allIds.has(id)) || new Set(created).size !== created.length) return reply(409, {error:'node id already used'});
         const events = bodyIn.ops.map((payload) => {
           const ev = { seq: d.events.length + 1, payload };
           d.events.push(ev);
@@ -96,7 +100,7 @@ async function seedDoc(e, project, id, title, ops) {
   return made.id;
 }
 
-const edit = (doc, id, text) => doc.events.push({ seq: doc.events.length + 1, payload: { type: 'FieldEdited', node_id: id, field: 'label', value: text } });
+const edit = (doc, id, text) => doc.events.push({ seq: doc.events.length + 1, payload: { type: 'FieldEdited', node_id: doc.testIds?.[id] ?? id, field: 'label', value: text } });
 
 function setup() {
   const local = engine('L');
@@ -109,10 +113,106 @@ function setup() {
 const sync = async (ctx, picks = {}) => {
   const plan = await planSync(ctx.sides, ctx.link, picks);
   const done = await applyPlan(ctx.sides, ctx.link, plan, { host: 'the server' });
+  for (const mapping of Object.values(ctx.link.files)) {
+    const remote = ctx.remote.docs.get(mapping.remoteDocId);
+    if (remote) remote.testIds = mapping.nodeIds;
+  }
   return { plan, done };
 };
 
-test('a file only here is created on the server with the same node ids, and nothing more is sent next time', async () => {
+const nodesOf = doc => { const nodes = {}; for (const e of doc.events) applyEvent(nodes, e.payload); return nodes; };
+
+test('one source can sync to two projects on the same engine, with independent persisted identities', async () => {
+  const ctx = setup();
+  const id = await seedDoc(ctx.local, 'lp', 'd1', 'Charter', [ROOT, para('p1', 'One', 1)]);
+  assert.equal((await sync(ctx)).done.created, 1);
+  const second = {...ctx, link: newLink('srv_1', 'rp2', 'Other project')};
+  assert.equal((await sync(second)).done.created, 1);
+  assert.notEqual(ctx.link.files[id].nodeIds.p1, second.link.files[id].nodeIds.p1);
+  second.link = JSON.parse(JSON.stringify(second.link));
+  edit(ctx.local.docs.get(id), 'p1', 'Amended');
+  assert.equal((await sync(second)).done.sent, 1);
+  const copy = ctx.remote.docs.get(second.link.files[id].remoteDocId);
+  assert.equal(nodesOf(copy)[second.link.files[id].nodeIds.p1].current_fields.label, 'Amended');
+  assert.equal(nodesOf(ctx.remote.docs.get(ctx.link.files[id].remoteDocId))[ctx.link.files[id].nodeIds.p1].current_fields.label, 'One');
+});
+
+test('a remote document can be received into two local projects without reusing engine-global IDs', async () => {
+  const ctx = setup();
+  await seedDoc(ctx.remote, 'rp', 'r1', 'Budget', [ROOT, para('p1', 'Wages', 1)]);
+  assert.equal((await sync(ctx)).done.created, 1);
+  const second = {...ctx, sides:{...ctx.sides, localProjectId:'lp2'}, link:newLink('srv_1','rp','Second local copy')};
+  assert.equal((await sync(second)).done.created, 1);
+  const a = Object.keys(Object.values(ctx.link.files)[0].nodeIds);
+  const b = Object.keys(Object.values(second.link.files)[0].nodeIds);
+  assert.ok(a.every(id => !b.includes(id)));
+});
+
+test('interrupted creation resumes the saved destination and IDs after restart, even after a lost batch acknowledgement', async () => {
+  const ctx = setup();
+  const id = await seedDoc(ctx.local, 'lp', 'd1', 'Large file', [ROOT, ...Array.from({length:450},(_,i)=>para('p'+i,'Line '+i,1))]);
+  const send = ctx.remote.transport.apiSend;
+  let lost = false, saved;
+  ctx.remote.transport.apiSend = async (...args) => {
+    const response = await send(...args);
+    if (!lost && args[1].endsWith('/batch')) { lost = true; throw new Error('connection lost after commit'); }
+    return response;
+  };
+  const failed = await applyPlan(ctx.sides,ctx.link,await planSync(ctx.sides,ctx.link),{host:'server',onCheckpoint:async()=>{saved=JSON.stringify(ctx.link);}});
+  assert.equal(failed.held.length,1);
+  assert.equal(ctx.remote.docs.size,1);
+  assert.equal([...ctx.remote.docs.values()][0].events.length,400);
+  ctx.link=JSON.parse(saved);
+  assert.equal(ctx.link.files[id].creating,'remote');
+  const recovered=await sync(ctx);
+  assert.equal(recovered.done.created,1);
+  assert.equal(ctx.remote.docs.size,1);
+  assert.equal([...ctx.remote.docs.values()][0].events.length,451);
+  assert.equal(ctx.link.files[id].creating,undefined);
+  assert.equal((await sync(ctx)).plan.counts.same,1);
+});
+
+test('a changed partial copy is held instead of overwriting its newer content', async () => {
+  const ctx=setup();
+  await seedDoc(ctx.local,'lp','d1','Charter',[ROOT,para('p1','One',1)]);
+  const send=ctx.remote.transport.apiSend;
+  ctx.remote.transport.apiSend=async (...args)=>{const response=await send(...args);if(args[1].endsWith('/batch'))throw new Error('lost acknowledgement');return response;};
+  await sync(ctx);
+  ctx.remote.transport.apiSend=send;
+  const copy=[...ctx.remote.docs.values()][0];
+  edit(copy,'p1','Changed by a person');
+  const writes=ctx.remote.writes;
+  const again=await sync(ctx);
+  assert.match(again.done.held[0].why,/partially copied file changed/);
+  assert.equal(ctx.remote.writes,writes);
+  assert.equal(ctx.remote.docs.size,1);
+});
+
+test('a failed durable checkpoint prevents the first content write', async () => {
+  const ctx=setup();
+  await seedDoc(ctx.local,'lp','d1','Charter',[ROOT]);
+  const done=await applyPlan(ctx.sides,ctx.link,await planSync(ctx.sides,ctx.link),{host:'server',onCheckpoint:async()=>{throw new Error('disk full');}});
+  assert.match(done.held[0].why,/disk full/);
+  assert.equal(ctx.remote.writes,0);
+});
+
+test('legacy links keep their existing identities and content fields are never rewritten as node IDs', async () => {
+  const ctx=setup();
+  const local=await seedDoc(ctx.local,'lp','d1','Charter',[ROOT,para('p1','root',1)]);
+  const remote=await seedDoc(ctx.remote,'rp','r1','Charter',[ROOT,para('p1','root',1)]);
+  ctx.link.files[local]={remoteDocId:remote,localSeq:2,remoteSeq:2};
+  edit(ctx.local.docs.get(local),'p1','Changed');
+  assert.equal((await sync(ctx)).done.sent,1);
+  assert.equal(ctx.link.files[local].nodeIds.p1,'p1');
+  const nodes=nodesOf(ctx.local.docs.get(local));
+  const mapped=mapNodes(nodes,{root:'new-root',p1:'new-paragraph'});
+  assert.equal(mapped['new-paragraph'].parent_id,'new-root');
+  assert.equal(mapped['new-paragraph'].current_fields.content.content[0].text,'root');
+  assert.deepEqual(mapNodes(mapped,inverseIds({root:'new-root',p1:'new-paragraph'})),Object.assign(Object.create(null),nodes));
+  assert.throws(()=>checkedIds({a:'same',b:'same'}),/mapping is invalid/);
+});
+
+test('a file only here is created on the server with fresh mapped node ids, and nothing more is sent next time', async () => {
   const ctx = setup();
   const id = await seedDoc(ctx.local, 'lp', 'd1', 'Charter', [ROOT, para('p1', 'One', 1), para('p2', 'Two', 2)]);
   const first = await sync(ctx);
@@ -121,7 +221,8 @@ test('a file only here is created on the server with the same node ids, and noth
   const copy = [...ctx.remote.docs.values()][0];
   assert.equal(copy.title, 'Charter');
   assert.equal(copy.project, 'rp');
-  assert.deepEqual(copy.events.map((x) => x.payload.node_id), ['root', 'p1', 'p2']);
+  assert.deepEqual(copy.events.map((x) => x.payload.node_id), ['root', 'p1', 'p2'].map(node => ctx.link.files[id].nodeIds[node]));
+  assert.notEqual(copy.events[0].payload.node_id, 'root');
   assert.equal(ctx.link.files[id].remoteDocId, copy.id);
   const writes = ctx.remote.writes;
   const again = await sync(ctx);
@@ -138,7 +239,7 @@ test('a file only on the server is created here', async () => {
   assert.equal(done.created, 1);
   const mine = [...ctx.local.docs.values()][0];
   assert.equal(mine.project, 'lp');
-  assert.deepEqual(mine.events.map((x) => x.payload.node_id), ['root', 'p1']);
+  assert.deepEqual(mine.events.map((x) => ctx.link.files[mine.id].nodeIds[x.payload.node_id]), ['root', 'p1']);
 });
 
 test('an edit here goes to the server, an edit there comes here, and each side keeps its own revisions', async () => {
@@ -153,7 +254,7 @@ test('an edit here goes to the server, an edit there comes here, and each side k
   const read = (e, doc, node) => {
     const nodes = {};
     for (const ev of doc.events) applyEvent(nodes, ev.payload);
-    return nodes[node].current_fields.label;
+    return nodes[doc.testIds?.[node] ?? node].current_fields.label;
   };
   assert.equal(read(ctx.remote, copy, 'p1'), 'One, amended here');
   edit(copy, 'p2', 'Two, amended there');
@@ -175,7 +276,7 @@ test('changes to different fields on both sides are both kept, on both sides', a
   const labels = (doc) => {
     const nodes = {};
     for (const ev of doc.events) applyEvent(nodes, ev.payload);
-    return ['p1', 'p2'].map((k) => nodes[k].current_fields.label);
+    return ['p1', 'p2'].map((k) => nodes[doc.testIds?.[k] ?? k].current_fields.label);
   };
   assert.deepEqual(labels(ctx.local.docs.get(id)), ['One here', 'Two there']);
   assert.deepEqual(labels(copy), ['One here', 'Two there']);
@@ -236,15 +337,15 @@ test('a paragraph added on each side lands in both files, in order', async () =>
   await sync(ctx);
   const copy = [...ctx.remote.docs.values()][0];
   ctx.local.docs.get(id).events.push({ seq: ctx.local.docs.get(id).events.length + 1, payload: para('here', 'Added here', 5) });
-  copy.events.push({ seq: copy.events.length + 1, payload: para('there', 'Added there', 7) });
+  copy.events.push({ seq: copy.events.length + 1, payload: {...para('there', 'Added there', 7), parent_id:copy.testIds.root} });
   await sync(ctx);
   const order = (doc) => {
     const nodes = {};
     for (const ev of doc.events) applyEvent(nodes, ev.payload);
-    return Object.values(nodes).filter((x) => x.parent_id === 'root').sort((a, b) => (a.pos < b.pos ? -1 : 1)).map((x) => x.id);
+    return Object.values(nodes).filter((x) => x.parent_id === (doc.testIds?.root ?? 'root')).sort((a, b) => (a.pos < b.pos ? -1 : 1)).map((x) => x.current_fields.label);
   };
-  assert.deepEqual(order(ctx.local.docs.get(id)), ['p1', 'here', 'there']);
-  assert.deepEqual(order(copy), ['p1', 'here', 'there']);
+  assert.deepEqual(order(ctx.local.docs.get(id)), ['One', 'Added here', 'Added there']);
+  assert.deepEqual(order(copy), ['One', 'Added here', 'Added there']);
 });
 
 test('a server whose rules refuse a direct write gets the changes as a change request, once', async () => {

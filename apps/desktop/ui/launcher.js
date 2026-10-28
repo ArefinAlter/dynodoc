@@ -1423,6 +1423,7 @@ Suggest, do not order.` }
     { kind: "claude", label: "Claude Code (existing sign-in)", base: "https://claude.local-agent.invalid/v1", model: "default", needsKey: !1 },
     { kind: "cursor", label: "Cursor (existing sign-in)", base: "https://cursor.local-agent.invalid/v1", model: "default", needsKey: !1 },
     { kind: "antigravity", label: "Antigravity (existing sign-in)", base: "https://antigravity.local-agent.invalid/v1", model: "default", needsKey: !1 },
+    { kind: "grok", label: "Grok Build (separate sign-in)", base: "https://grok.local-agent.invalid/v1", model: "default", needsKey: !1 },
     { kind: "anthropic", label: "Anthropic", base: "https://api.anthropic.com", model: "claude-sonnet-4-5", needsKey: !0 },
     { kind: "openai", label: "OpenAI", base: "https://api.openai.com/v1", model: "gpt-5", needsKey: !0 },
     { kind: "google", label: "Google Gemini", base: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro", needsKey: !0 },
@@ -2772,8 +2773,8 @@ ${text3}` : out.push({ role, text: text3 });
           byAgent: !!cr.agent,
           agentStatement: cr.agent ? String(cr.agent.statement ?? cr.agent.note ?? "") : void 0
         });
-        let own = drafts2.find((x) => x.id === cr.id);
-        own ? (own.state = draftState(null, cr), own.name = cr.name) : (drafts2.push({ id: cr.id, docId, projectId: p2.id, name: cr.name, authorId: cr.author?.id ?? "", baseSeq: cr.base_seq ?? 0, createdAt: ms(cr.created_at), state: draftState(null, cr), blocks: draftMapped.blocks }), ctx2.drafts[cr.id] = { id: cr.id, docId, revision: detail.revision ?? cr.revision ?? 0, own: cr.author?.id === me, submitted: !0, nodes: draftNodes, slots: draftMapped.slots });
+        let own2 = drafts2.find((x) => x.id === cr.id);
+        own2 ? (own2.state = draftState(null, cr), own2.name = cr.name) : (drafts2.push({ id: cr.id, docId, projectId: p2.id, name: cr.name, authorId: cr.author?.id ?? "", baseSeq: cr.base_seq ?? 0, createdAt: ms(cr.created_at), state: draftState(null, cr), blocks: draftMapped.blocks }), ctx2.drafts[cr.id] = { id: cr.id, docId, revision: detail.revision ?? cr.revision ?? 0, own: cr.author?.id === me, submitted: !0, nodes: draftNodes, slots: draftMapped.slots });
       });
     }
     for (let d of drafts2) {
@@ -2963,13 +2964,13 @@ ${text3}` : out.push({ role, text: text3 });
         await run("draft", async () => {
           let body3 = ok(await t.apiSend("POST", `documents/${d.docId}/drafts`, { name: d.name, base_seq: dc.latest }), "create the draft");
           out.ids[d.id] = body3.id;
-          let revision = 0, own = next.commits.filter((c) => c.branch === d.id && !c.local).sort((a, b) => a.seq - b.seq), nodes = dc.nodes;
+          let revision = 0, own2 = next.commits.filter((c) => c.branch === d.id && !c.local).sort((a, b) => a.seq - b.seq), nodes = dc.nodes;
           try {
             nodes = ok(await t.apiGet(`documents/${d.docId}/drafts/${body3.id}`), "open the draft").state?.nodes ?? dc.nodes;
           } catch {
           }
           let slots = blocksOf2(dc.kind, nodes).slots;
-          for (let c of own) {
+          for (let c of own2) {
             let ops = editsToOps(c.edits, { kind: dc.kind, nodes, slots, newId: newUlid });
             if (!ops.length) continue;
             let res = ok(await t.apiSend("POST", `documents/${d.docId}/drafts/${body3.id}`, { ops, revision }), "write to the draft");
@@ -3183,6 +3184,55 @@ ${text3}` : out.push({ role, text: text3 });
     }, 800));
   }
 
+  // client/src/data/sync-ids.ts
+  var own = (o, key) => Object.prototype.hasOwnProperty.call(o, key);
+  function freshNodeId() {
+    let alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ", time = Date.now(), out = "";
+    for (let i = 0; i < 10; i++)
+      out = alphabet[time % 32] + out, time = Math.floor(time / 32);
+    let bytes = crypto.getRandomValues(new Uint8Array(16));
+    for (let byte of bytes) out += alphabet[byte % 32];
+    return out;
+  }
+  function checkedIds(value = {}) {
+    let map = /* @__PURE__ */ Object.create(null), reverse = /* @__PURE__ */ new Set();
+    for (let [local2, remote] of Object.entries(value)) {
+      if (!local2 || typeof remote != "string" || !remote || reverse.has(remote)) throw new Error("The saved node mapping is invalid. Restore the workspace backup before syncing.");
+      map[local2] = remote, reverse.add(remote);
+    }
+    return map;
+  }
+  function inverseIds(map) {
+    let out = /* @__PURE__ */ Object.create(null);
+    for (let [local2, remote] of Object.entries(map)) out[remote] = local2;
+    return out;
+  }
+  function pairedIds(existing, local2, remote) {
+    let map = checkedIds(existing), reverse = inverseIds(map), remoteIds = new Set(remote.flatMap((nodes) => Object.keys(nodes)));
+    for (let id of local2.flatMap((nodes) => Object.keys(nodes))) {
+      if (own(map, id)) continue;
+      let target = existing === void 0 && remoteIds.has(id) && !own(reverse, id) ? id : freshNodeId();
+      map[id] = target, reverse[target] = id;
+    }
+    for (let id of remoteIds) {
+      if (own(reverse, id)) continue;
+      let target = freshNodeId();
+      map[target] = id, reverse[id] = target;
+    }
+    return map;
+  }
+  function mapNodes(nodes, ids) {
+    let out = /* @__PURE__ */ Object.create(null), key = (id) => {
+      if (!own(ids, id)) throw new Error("A node is missing from the saved sync mapping.");
+      return ids[id];
+    };
+    for (let node of Object.values(nodes)) {
+      let id = key(node.id);
+      out[id] = { ...node, id, parent_id: node.parent_id ? key(node.parent_id) : null };
+    }
+    return out;
+  }
+
   // client/src/data/sync.ts
   var SyncError = class extends Error {
     constructor(message2, status = 0) {
@@ -3329,12 +3379,19 @@ ${text3}` : out.push({ role, text: text3 });
     return { items, counts };
   }
   async function planSync(sides, link, picks = {}) {
-    let [lf, rf] = await Promise.all([listFiles(sides.local, sides.localProjectId), listFiles(sides.remote, link.remoteProjectId)]), items = [], claimed = /* @__PURE__ */ new Set();
+    let [lf, rf] = await Promise.all([listFiles(sides.local, sides.localProjectId), listFiles(sides.remote, link.remoteProjectId)]), items = [], claimed = /* @__PURE__ */ new Set(), creatingLocal = /* @__PURE__ */ new Set();
+    for (let [localId, m] of Object.entries(link.files)) {
+      if (!m.creating) continue;
+      creatingLocal.add(localId), claimed.add(m.remoteDocId);
+      let source = await readDoc(m.creating === "remote" ? sides.local : sides.remote, m.creating === "remote" ? localId : m.remoteDocId);
+      items.push({ action: m.creating === "remote" ? "add-remote" : "add-local", title: source.title, kind: source.kind, localId, remoteId: m.remoteDocId, ...m.creating === "remote" ? { local: source } : { remote: source }, nodeIds: checkedIds(m.nodeIds), toLocal: [], toRemote: [], conflicts: [] });
+    }
     for (let f of lf) {
+      if (creatingLocal.has(f.id)) continue;
       let m = link.files[f.id];
       if (!m) {
         let doc2 = await readDoc(sides.local, f.id);
-        items.push({ action: "add-remote", title: f.title, kind: doc2.kind, localId: f.id, local: doc2, toRemote: diffNodes({}, doc2.nodes), toLocal: [], conflicts: [] });
+        items.push({ action: "add-remote", title: f.title, kind: doc2.kind, localId: f.id, local: doc2, nodeIds: pairedIds({}, [doc2.nodes], []), toRemote: diffNodes({}, doc2.nodes), toLocal: [], conflicts: [] });
         continue;
       }
       claimed.add(m.remoteDocId);
@@ -3353,23 +3410,23 @@ ${text3}` : out.push({ role, text: text3 });
         continue;
       }
       let doc2 = await readDoc(sides.remote, r.id);
-      items.push({ action: "add-local", title: r.title, kind: doc2.kind, remoteId: r.id, remote: doc2, toRemote: [], toLocal: diffNodes({}, doc2.nodes), conflicts: [] });
+      items.push({ action: "add-local", title: r.title, kind: doc2.kind, remoteId: r.id, remote: doc2, nodeIds: pairedIds({}, [], [doc2.nodes]), toRemote: [], toLocal: diffNodes({}, doc2.nodes), conflicts: [] });
     }
     return counted(items);
   }
   async function planPair(sides, lf, rf, m, picks) {
     let base = { action: "same", title: lf.title, kind: lf.kind, localId: lf.id, remoteId: rf.id, toRemote: [], toLocal: [], conflicts: [] }, localMoved = lf.latest !== m.localSeq, remoteMoved = rf.latest !== m.remoteSeq;
     if (!localMoved && !remoteMoved) return base;
-    let [l, r] = await Promise.all([readDoc(sides.local, lf.id), readDoc(sides.remote, rf.id)]), lBase = localMoved ? await nodesThrough(sides.local, lf.id, m.localSeq) : l.nodes, rBase = remoteMoved ? await nodesThrough(sides.remote, rf.id, m.remoteSeq) : r.nodes, lc = changesOf(lBase, l.nodes), rc = changesOf(rBase, r.nodes), label = (id) => nodeText(l.nodes[id] ?? r.nodes[id]) ? clip2(nodeText(l.nodes[id] ?? r.nodes[id]), 60) : `${(l.nodes[id] ?? r.nodes[id])?.type ?? "item"}`, describe = (id, side, key) => {
+    let [l, rawRemote] = await Promise.all([readDoc(sides.local, lf.id), readDoc(sides.remote, rf.id)]), lBase = localMoved ? await nodesThrough(sides.local, lf.id, m.localSeq) : l.nodes, rawBase = remoteMoved ? await nodesThrough(sides.remote, rf.id, m.remoteSeq) : rawRemote.nodes, nodeIds = pairedIds(m.nodeIds, [l.nodes, lBase], [rawRemote.nodes, rawBase]), reverse = inverseIds(nodeIds), r = { ...rawRemote, nodes: mapNodes(rawRemote.nodes, reverse) }, rBase = mapNodes(rawBase, reverse), lc = changesOf(lBase, l.nodes), rc = changesOf(rBase, r.nodes), label = (id) => nodeText(l.nodes[id] ?? r.nodes[id]) ? clip2(nodeText(l.nodes[id] ?? r.nodes[id]), 60) : `${(l.nodes[id] ?? r.nodes[id])?.type ?? "item"}`, describe = (id, side, key) => {
       let n = (side === "local" ? l.nodes : r.nodes)[id];
       if (key.startsWith("node:")) return n?.deleted ? "Deleted here" : clip2(nodeText(n)) || "Changed here";
       if (key.startsWith("del:")) return n?.deleted ? "Deleted" : "Kept";
       if (key.startsWith("move:")) return "Moved to a different place";
       let field2 = key.split(":").slice(2).join(":"), v = n ? fieldsOf2(n)[field2] : void 0;
       return clip2(plain(v) || (v == null ? "(empty)" : canon(v)));
-    }, { merged, conflicts: conflicts2 } = merge3(lBase, lc, rc, picks, describe, label), out = { ...base, local: l, remote: r, conflicts: conflicts2 };
+    }, { merged, conflicts: conflicts2 } = merge3(lBase, lc, rc, picks, describe, label), out = { ...base, local: l, remote: r, conflicts: conflicts2, nodeIds };
     if (conflicts2.some((c) => !c.pick)) return { ...out, action: "conflict", note: `${conflicts2.filter((c) => !c.pick).length} change${conflicts2.filter((c) => !c.pick).length === 1 ? " is" : "s are"} in conflict. Choose a side for each.` };
-    let toRemote = diffNodes(r.nodes, merged), toLocal = diffNodes(l.nodes, merged);
+    let toRemote = diffNodes(rawRemote.nodes, mapNodes(merged, nodeIds)), toLocal = diffNodes(l.nodes, merged);
     return out.toRemote = toRemote, out.toLocal = toLocal, m.pending && m.pending.localSeq === lf.latest && toRemote.length && !toLocal.length ? { ...out, action: "waiting", note: "The changes are waiting for review on the server." } : (out.action = toRemote.length && toLocal.length ? "both" : toRemote.length ? "send" : toLocal.length ? "receive" : "same", out);
   }
   var MAX_OPS_PER_BATCH = 400, MAX_BYTES_PER_BATCH = 300 * 1024;
@@ -3389,11 +3446,16 @@ ${text3}` : out.push({ role, text: text3 });
     }
     return seq;
   }
-  async function createDoc(t, projectId, title, kind, ops) {
-    let doc2 = body(await t.apiSend("POST", "documents", { title: title.slice(0, 200) || "Untitled" }), "create a file"), id = String(doc2.id);
+  async function finishCreation(t, id, projectId, kind, desired) {
+    let current3 = await readDoc(t, id);
+    for (let [key, node] of Object.entries(current3.nodes)) {
+      let expected = desired[key];
+      if (!expected || !same2(fieldsOf2(node), fieldsOf2(expected)) || node.type !== expected.type || node.pos !== expected.pos || (node.parent_id ?? null) !== (expected.parent_id ?? null) || !!node.deleted != !!expected.deleted)
+        throw new SyncError("The partially copied file changed. Review it before continuing this link.");
+    }
     body(await t.apiSend("POST", `documents/${id}/metadata`, { settings: { kind } }), "describe the file");
-    let seq = await writeOps(t, id, ops, 0);
-    return body(await t.apiSend("POST", `documents/${id}/location`, { space_id: projectId }), "put the file in the project"), { id, seq };
+    let seq = await writeOps(t, id, diffNodes(current3.nodes, desired), current3.seq);
+    return body(await t.apiSend("POST", `documents/${id}/location`, { space_id: projectId }), "put the file in the project"), seq;
   }
   async function applyPlan(sides, link, plan2, o = { host: "the server" }) {
     let done = { sent: 0, received: 0, created: 0, unchanged: 0, held: [], needs: 0 };
@@ -3402,18 +3464,25 @@ ${text3}` : out.push({ role, text: text3 });
         if (item.action === "same" && item.localId && item.remoteId) {
           let m = link.files[item.localId];
           if (m) {
+            item.nodeIds && (m.nodeIds = checkedIds(item.nodeIds));
             let [lf, rf] = [item.local?.seq, item.remote?.seq];
-            lf !== void 0 && (m.localSeq = lf), rf !== void 0 && (m.remoteSeq = rf);
+            lf !== void 0 && (m.localSeq = lf), rf !== void 0 && (m.remoteSeq = rf), await o.onCheckpoint?.();
           }
           done.unchanged += 1;
         } else if (item.action === "add-remote" && item.local && item.localId) {
-          let made = await createDoc(sides.remote, link.remoteProjectId, item.title, item.kind, item.toRemote);
-          link.files[item.localId] = { remoteDocId: made.id, localSeq: item.local.seq, remoteSeq: made.seq }, await o.onNote?.(made.id, 1, made.seq, "Sent from a computer", `Created from the file "${item.title}" on another computer.`, "remote"), done.created += 1;
+          let nodeIds = pairedIds(item.nodeIds ?? {}, [item.local.nodes], []), id = item.remoteId ?? String(body(await sides.remote.apiSend("POST", "documents", { title: item.title.slice(0, 200) || "Untitled" }), "create a file").id), m = link.files[item.localId] = { remoteDocId: id, localSeq: 0, remoteSeq: 0, nodeIds, creating: "remote" };
+          await o.onCheckpoint?.();
+          let seq = await finishCreation(sides.remote, id, link.remoteProjectId, item.kind, mapNodes(item.local.nodes, nodeIds));
+          m.localSeq = item.local.seq, m.remoteSeq = seq, delete m.creating, await o.onCheckpoint?.(), await o.onNote?.(id, 1, seq, "Sent from a computer", `Created from the file "${item.title}" on another computer.`, "remote"), done.created += 1;
         } else if (item.action === "add-local" && item.remote && item.remoteId) {
-          let made = await createDoc(sides.local, sides.localProjectId, item.title, item.kind, item.toLocal);
-          link.files[made.id] = { remoteDocId: item.remoteId, localSeq: made.seq, remoteSeq: item.remote.seq }, await o.onNote?.(made.id, 1, made.seq, `Received from ${o.host}`.slice(0, 200), `Copied from the file "${item.title}" on ${o.host}.`, "local"), done.created += 1;
+          let nodeIds = pairedIds(item.nodeIds ?? {}, [], [item.remote.nodes]), id = item.localId ?? String(body(await sides.local.apiSend("POST", "documents", { title: item.title.slice(0, 200) || "Untitled" }), "create a file").id), m = link.files[id] = { remoteDocId: item.remoteId, localSeq: 0, remoteSeq: 0, nodeIds, creating: "local" };
+          await o.onCheckpoint?.();
+          let seq = await finishCreation(sides.local, id, sides.localProjectId, item.kind, mapNodes(item.remote.nodes, inverseIds(nodeIds)));
+          m.localSeq = seq, m.remoteSeq = item.remote.seq, delete m.creating, await o.onCheckpoint?.(), await o.onNote?.(id, 1, seq, `Received from ${o.host}`.slice(0, 200), `Copied from the file "${item.title}" on ${o.host}.`, "local"), done.created += 1;
         } else if ((item.action === "send" || item.action === "receive" || item.action === "both") && item.localId && item.remoteId && item.local && item.remote) {
-          let m = link.files[item.localId], rSeq = item.remote.seq, lSeq = item.local.seq;
+          let m = link.files[item.localId];
+          m.nodeIds = checkedIds(item.nodeIds), await o.onCheckpoint?.();
+          let rSeq = item.remote.seq, lSeq = item.local.seq;
           if (item.toRemote.length) {
             try {
               rSeq = await writeOps(sides.remote, item.remoteId, item.toRemote, item.remote.seq);
@@ -3426,16 +3495,19 @@ ${text3}` : out.push({ role, text: text3 });
             }
             done.sent += 1, await o.onNote?.(item.remoteId, item.remote.seq + 1, rSeq, "Synced from a computer", `${item.toRemote.length} change${item.toRemote.length === 1 ? "" : "s"} from the copy on another computer.`, "remote");
           }
-          item.toLocal.length && (lSeq = await writeOps(sides.local, item.localId, item.toLocal, item.local.seq), done.received += 1, await o.onNote?.(item.localId, item.local.seq + 1, lSeq, `Synced from ${o.host}`.slice(0, 200), `${item.toLocal.length} change${item.toLocal.length === 1 ? "" : "s"} from ${o.host}.`, "local")), m.localSeq = lSeq, m.remoteSeq = rSeq, delete m.pending;
+          item.toLocal.length && (lSeq = await writeOps(sides.local, item.localId, item.toLocal, item.local.seq), done.received += 1, await o.onNote?.(item.localId, item.local.seq + 1, lSeq, `Synced from ${o.host}`.slice(0, 200), `${item.toLocal.length} change${item.toLocal.length === 1 ? "" : "s"} from ${o.host}.`, "local")), m.localSeq = lSeq, m.remoteSeq = rSeq, delete m.pending, await o.onCheckpoint?.();
         } else item.action === "conflict" ? (done.needs += 1, done.held.push({ title: item.title, why: item.note ?? "In conflict." })) : (item.action === "waiting" || item.action === "missing-remote" || item.action === "missing-local") && done.held.push({ title: item.title, why: item.note ?? "" });
       } catch (e) {
         done.held.push({ title: item.title, why: e instanceof Error ? e.message : String(e) });
       }
     return link.lastSyncedAt = Date.now(), done;
   }
-  async function sendForReview2(sides, link, item, who2) {
+  async function sendForReview2(sides, link, item, who2, onCheckpoint) {
     if (!item.localId || !item.remoteId || !item.remote || !item.local) throw new SyncError("That file is not linked.");
-    let m = link.files[item.localId], made = body(
+    let m = link.files[item.localId];
+    if (!m) throw new SyncError("That file is not linked.");
+    m.nodeIds = checkedIds(item.nodeIds), await onCheckpoint?.();
+    let made = body(
       await sides.remote.apiSend("POST", `documents/${item.remoteId}/change-requests`, {
         name: `Changes from ${who2}`.slice(0, 120),
         note: "Sent by a sync from a computer. Review the changes, then merge.",
@@ -3621,6 +3693,7 @@ ${text3}` : out.push({ role, text: text3 });
     try {
       let sides = sidesFor(localProjectId, l), plan2 = await planSync(sides, l, picksFor(localProjectId)), done = await applyPlan(sides, l, plan2, {
         host,
+        onCheckpoint: saveLinks,
         onNote: async (docId, from, to, summaryText, description, on) => {
           try {
             await (on === "local" ? local() : remoteOf(l.accountId)).svcSend("POST", "notes", { document_id: docId, branch: "main", from_seq: from, to_seq: to, kind: "revision", summary: summaryText.slice(0, 200), description: description.slice(0, 4e3) });
@@ -3641,7 +3714,7 @@ ${text3}` : out.push({ role, text: text3 });
     let l = links()[localProjectId], item = planOf(localProjectId)?.items.find((i) => i.localId === localDocId);
     if (!(!l || !item))
       try {
-        await sendForReview2(sidesFor(localProjectId, l), l, item, state.local.profile?.name ?? "a computer"), await saveLinks(), toast("success", "Sent for review", `The changes to ${item.title} are a change request on ${accountOf(l.accountId)?.host ?? "the server"}. A person there merges it; the next sync here picks the result up.`), await checkSync(localProjectId);
+        await sendForReview2(sidesFor(localProjectId, l), l, item, state.local.profile?.name ?? "a computer", saveLinks), await saveLinks(), toast("success", "Sent for review", `The changes to ${item.title} are a change request on ${accountOf(l.accountId)?.host ?? "the server"}. A person there merges it; the next sync here picks the result up.`), await checkSync(localProjectId);
       } catch (e) {
         toast("error", "Not sent", text(e));
       }
@@ -4607,7 +4680,7 @@ ${text3}` : out.push({ role, text: text3 });
         h("span", { class: "spacer" }),
         h("button", { type: "button", class: "release-pill", title: "About this release", onClick: () => {
           state.ui.settings.section = "about", go("settings");
-        } }, "Pre-alpha release")
+        } }, "Alpha release")
       )
     );
   }
@@ -6785,9 +6858,9 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       h(
         "div",
         { class: "about-hero card pad" },
-        h("div", { class: "about-title" }, h("strong", null, "Dynodoc"), " ", pill("Pre-alpha release", "warning", { mono: !1 })),
+        h("div", { class: "about-title" }, h("strong", null, "Dynodoc"), " ", pill("Alpha release", "warning", { mono: !1 })),
         h("p", null, "Version control for documents, spreadsheets and presentations: edits in Word, Excel, PowerPoint and Google’s editors become change requests, are reviewed and merged, and land in a hash-chained history."),
-        h("p", { class: "muted small" }, `Client 0.0.1-beta.1${shell2 ? `, desktop app ${state.desktopVersion}` : ""}.`)
+        h("p", { class: "muted small" }, `Client 0.1.0-alpha.1${shell2 ? `, desktop app ${state.desktopVersion}` : ""}.`)
       ),
       local2 ? section("This window shows the workspace on this computer", null, h(
         "p",
@@ -6807,7 +6880,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       section("Where each part runs", null, rows2(
         row("On this computer", "The workspace: a PostgreSQL database and the Dynodoc engine, started by the app on loopback addresses only and stopped when it closes. Your files are imported from and exported to Word, Excel and PowerPoint formats by a converter that runs in this window without network access. Preferences are a file in the app’s settings folder; secrets (the database passwords, sessions on servers, your provider keys) are in the operating system’s credential store.", null),
         row("On a server you sign in to", "Only what you link and sync: the content of the files of a linked project. History, comments, change requests and discussions stay where they were made. Each side keeps its own hash-chained history and verifies it on its own.", null),
-        row("At a model provider", "Only when you turn the agent on with your own key, allow that provider’s address, and ask a question: the conversation and the tools’ answers go from this computer to that address, and nowhere else. No Dynodoc server sees them.", null),
+        row("At a model provider", "Only when you enable an API-key provider or a supported installed-agent connection, allow it to receive content, and ask a question: the conversation and the tools’ answers go from this computer to that address, and nowhere else. No Dynodoc server sees them.", null),
         row("Not in this release", "Editing a document’s content inside this window (use Word, Excel or PowerPoint on a copy; saving it in the project’s folder turns the changes into a draft), the Google editors without a server, macOS (not built yet), automatic background sync (you press Sync), and phones (the Android and iPhone apps are separate and still need a server).", null)
       )),
       section("Privacy", null, rows2(
@@ -7013,7 +7086,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       section(
         state.desktop ? "Web workspace in your browser" : "Dynodoc server",
         state.desktop ? "Optional and separate from syncing: this opens the server’s web workspace in your system browser. This desktop app manages document workflow and sync; editing happens in Office and Google applications through the add-ins and extensions." : "Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.",
-        state.desktop ? slot : notice("info", "Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.")
+        state.desktop ? slot : notice("info", "Alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.")
       )
     ];
   }
@@ -7355,7 +7428,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
               field("Model", input(e.model, (v) => {
                 e.model = v;
               }, { id: `lm-${e.id}` })),
-              ["codex", "claude", "cursor", "antigravity"].includes(e.kind) ? field("Account", h("span", { class: "muted small" }, "Uses the sign-in saved by the installed agent.")) : field("Base address", input(e.base, (v) => {
+              ["codex", "claude", "cursor", "antigravity", "grok"].includes(e.kind) ? field("Account", h("span", { class: "muted small" }, e.kind === "grok" ? "Set GROK_HOME to <your home>/.verne/local-agents/grok and run grok login once. Grok Build owns this separate sign-in." : "Uses the sign-in saved by the installed agent.")) : field("Base address", input(e.base, (v) => {
                 e.base = v;
               }, { id: `lb-${e.id}` })),
               info.needsKey ? field("API key", e.keyHint ? h("div", { class: "key-stored" }, pill(`stored ····${e.keyHint}`, "success"), button("Forget", { size: "sm", variant: "ghost", onClick: () => forget(e) })) : h(

@@ -134,7 +134,7 @@ function sidebar(): HTMLElement {
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Toggle light and dark', title: 'Light or dark (Ctrl+Shift+L)', onClick: () => { toggleTheme(); render(); } }, icon(scheme() === 'dark' ? 'sun' : 'moon', 16)),
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Account and server', title: ds?.server ? `Server: ${ds.server}` : 'Account and server', id: 'nav-account', onClick: () => { state.ui.settings.section = 'accounts'; go('settings'); } }, icon('user', 16)),
       h('span', { class: 'spacer' }),
-      h('button', { type: 'button', class: 'release-pill', title: 'About this release', onClick: () => { state.ui.settings.section = 'about'; go('settings'); } }, 'Pre-alpha release'),
+      h('button', { type: 'button', class: 'release-pill', title: 'About this release', onClick: () => { state.ui.settings.section = 'about'; go('settings'); } }, 'Alpha release'),
     ),
   );
 }

@@ -1,5 +1,14 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Desktop 0.1.0-alpha.1 (29 October 2026)
+
+The Windows alpha packages the workflow-manager role, responsive panels, durable identities for
+multiple linked document copies, interrupted-copy recovery and official local-agent connections,
+including Grok Build with a dedicated sign-in. Validation and exact limits are recorded in
+[ACCEPTANCE-0.1.0-alpha.1.md](ACCEPTANCE-0.1.0-alpha.1.md). The engine component and schema47 are
+unchanged; the dated server deployment records below are independent of this desktop release.
+
+
 ## Live: schema 47 release (23 October 2026, 05:35 UTC)
 
 The VPS workspace (app.dynodoc.online), private API and admin site run application `3fa06fd` at PostgreSQL schema 47; the previous
