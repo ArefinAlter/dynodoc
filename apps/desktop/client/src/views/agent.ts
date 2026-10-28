@@ -254,6 +254,7 @@ function details(t: Thread): HTMLElement {
   return h(
     'aside',
     { class: 'agent-details' },
+    h('div', { class: 'details-heading' }, h('strong', null, 'Thread details'), iconButton('x', 'Close thread details', () => { state.ui.agent.detailsOpen = false; render(); })),
     h('div', { class: 'details-block' }, h('div', { class: 'details-title' }, 'This thread'), h('dl', { class: 'facts small' }, h('dt', null, 'Access'), h('dd', null, ACCESS_INFO[t.access].label), h('dt', null, 'Model'), h('dd', null, entry ? labelOf(entry) : 'Prepared replies'), h('dt', null, 'Tool calls'), h('dd', null, `${calls.length} (${calls.filter((c) => c.refused).length} refused)`), usageFacts(t), h('dt', null, 'Started'), h('dd', null, short(t.createdAt)))),
     h('div', { class: 'details-block' }, h('div', { class: 'details-title' }, 'Access'), segmented(t.access, [['read', 'Read only'], ['propose', 'Propose']], (v) => { t.access = v; render(); }, 'Access'), h('p', { class: 'muted small' }, ACCESS_INFO[t.access].blurb, ' The agent never raises its own access.')),
     h('div', { class: 'details-block' }, h('div', { class: 'details-title' }, 'Tools'), h('ul', { class: 'tool-list' }, TOOLS.map((tool) => {
