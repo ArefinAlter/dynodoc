@@ -111,7 +111,7 @@ function accounts(): Child {
       state.desktop
         ? 'Optional and separate from syncing: this opens the server’s web workspace in your system browser. This desktop app manages document workflow and sync; editing happens in Office and Google applications through the add-ins and extensions.'
         : 'Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.',
-      state.desktop ? slot : notice('info', 'Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.'),
+      state.desktop ? slot : notice('info', 'Alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.'),
     ),
   ];
 }

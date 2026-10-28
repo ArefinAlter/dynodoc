@@ -4680,7 +4680,7 @@ ${text3}` : out.push({ role, text: text3 });
         h("span", { class: "spacer" }),
         h("button", { type: "button", class: "release-pill", title: "About this release", onClick: () => {
           state.ui.settings.section = "about", go("settings");
-        } }, "Pre-alpha release")
+        } }, "Alpha release")
       )
     );
   }
@@ -6858,7 +6858,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       h(
         "div",
         { class: "about-hero card pad" },
-        h("div", { class: "about-title" }, h("strong", null, "Dynodoc"), " ", pill("Pre-alpha release", "warning", { mono: !1 })),
+        h("div", { class: "about-title" }, h("strong", null, "Dynodoc"), " ", pill("Alpha release", "warning", { mono: !1 })),
         h("p", null, "Version control for documents, spreadsheets and presentations: edits in Word, Excel, PowerPoint and Google’s editors become change requests, are reviewed and merged, and land in a hash-chained history."),
         h("p", { class: "muted small" }, `Client 0.1.0-alpha.1${shell2 ? `, desktop app ${state.desktopVersion}` : ""}.`)
       ),
@@ -6880,7 +6880,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       section("Where each part runs", null, rows2(
         row("On this computer", "The workspace: a PostgreSQL database and the Dynodoc engine, started by the app on loopback addresses only and stopped when it closes. Your files are imported from and exported to Word, Excel and PowerPoint formats by a converter that runs in this window without network access. Preferences are a file in the app’s settings folder; secrets (the database passwords, sessions on servers, your provider keys) are in the operating system’s credential store.", null),
         row("On a server you sign in to", "Only what you link and sync: the content of the files of a linked project. History, comments, change requests and discussions stay where they were made. Each side keeps its own hash-chained history and verifies it on its own.", null),
-        row("At a model provider", "Only when you turn the agent on with your own key, allow that provider’s address, and ask a question: the conversation and the tools’ answers go from this computer to that address, and nowhere else. No Dynodoc server sees them.", null),
+        row("At a model provider", "Only when you enable an API-key provider or a supported installed-agent connection, allow it to receive content, and ask a question: the conversation and the tools’ answers go from this computer to that address, and nowhere else. No Dynodoc server sees them.", null),
         row("Not in this release", "Editing a document’s content inside this window (use Word, Excel or PowerPoint on a copy; saving it in the project’s folder turns the changes into a draft), the Google editors without a server, macOS (not built yet), automatic background sync (you press Sync), and phones (the Android and iPhone apps are separate and still need a server).", null)
       )),
       section("Privacy", null, rows2(
@@ -7086,7 +7086,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       section(
         state.desktop ? "Web workspace in your browser" : "Dynodoc server",
         state.desktop ? "Optional and separate from syncing: this opens the server’s web workspace in your system browser. This desktop app manages document workflow and sync; editing happens in Office and Google applications through the add-ins and extensions." : "Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.",
-        state.desktop ? slot : notice("info", "Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.")
+        state.desktop ? slot : notice("info", "Alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.")
       )
     ];
   }

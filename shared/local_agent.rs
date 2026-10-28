@@ -49,14 +49,14 @@ pub enum Error {
     ToolPolicy,
     /// Grok needs its own official sign-in in the isolated Verne profile.
     GrokSetup,
-    /// The isolated Grok profile contains configuration that could execute tools.
+    /// Grok cannot enforce the restricted local-operation policy.
     GrokProfile,
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::GrokSetup => "Grok Build requires a separate official sign-in. Set GROK_HOME to <your home>/.verne/local-agents/grok, then run grok login. This app never copies another profile’s credentials.",
-            Self::GrokProfile => "The isolated Grok profile contains unsupported configuration. Keep this profile dedicated to Verne; hooks, plugins, MCP and custom settings cannot be enabled here.",
+            Self::GrokProfile => "Grok could not enforce the restricted local-operation policy. Use a regular dedicated sign-in directory; provider tools and client filesystem access cannot be enabled here.",
             Self::ToolPolicy => "Before using Antigravity here, set toolPermission to strict in its CLI settings (~/.gemini/antigravity-cli/settings.json). This app will not send a request while the CLI can approve tools independently.",
             Self::NotSubscription => "Sign in to the installed agent with your subscription account. Its current sign-in is not a verified subscription connection.",
             Self::Missing => "Install this provider's CLI and sign in to your subscription, then try again.",
@@ -612,51 +612,42 @@ fn grok_home() -> Result<PathBuf, Error> {
 }
 
 fn check_grok_home(path: &Path) -> Result<(), Error> {
-    // Inspect names and file types only, never the credential contents. Reject
-    // executable configuration rather than trying to sanitize someone else's files.
-    if std::fs::symlink_metadata(path)
-        .map_err(|_| Error::GrokSetup)?
-        .file_type()
-        .is_symlink()
-    {
-        return Err(Error::GrokProfile);
-    }
-    for entry in std::fs::read_dir(path).map_err(|_| Error::GrokProfile)? {
-        let entry = entry.map_err(|_| Error::GrokProfile)?;
-        let kind = entry.file_type().map_err(|_| Error::GrokProfile)?;
-        let name = entry.file_name();
-        let name = name.to_str().ok_or(Error::GrokProfile)?;
-        let inert_file = [
-            "auth.json",
-            "auth.json.lock",
-            "bundle-manifest.json",
-            "version",
-        ]
-        .contains(&name)
-            && kind.is_file();
-        let inert_dir = [
-            "logs",
-            "sessions",
-            "telemetry",
-            "cache",
-            "crashes",
-            "bundled",
-        ]
-        .contains(&name)
-            && kind.is_dir();
-        if kind.is_symlink() || !(inert_file || inert_dir) {
+    // The official CLI alone reads/refreshes auth.json via GROK_AUTH_PATH. Every
+    // configuration/cache/extension path uses a separate empty scratch home.
+    // Reject linked ancestors as well as a linked credential file, without ever
+    // opening the credential contents or the profile's configuration files.
+    for ancestor in path.ancestors() {
+        if ancestor.as_os_str().is_empty() {
+            continue;
+        }
+        let meta = std::fs::symlink_metadata(ancestor).map_err(|_| Error::GrokSetup)?;
+        if linked_metadata(&meta) {
             return Err(Error::GrokProfile);
         }
     }
-    if !path.join("auth.json").is_file() {
-        return Err(Error::GrokSetup);
+    let auth = std::fs::symlink_metadata(path.join("auth.json")).map_err(|_| Error::GrokSetup)?;
+    if linked_metadata(&auth) || !auth.is_file() {
+        return Err(Error::GrokProfile);
     }
     Ok(())
 }
 
+fn linked_metadata(meta: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // FILE_ATTRIBUTE_REPARSE_POINT includes junctions, not only symlinks.
+        meta.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        meta.file_type().is_symlink()
+    }
+}
+
 fn grok_environment(cmd: &mut tokio::process::Command, scratch: &Path, home: &Path) {
     client_environment(cmd);
-    // Only the CLI sees its dedicated authentication store. Vendor compatibility,
+    // Only the CLI sees its dedicated authentication file. Vendor compatibility,
     // project discovery and shell startup see an empty temporary home instead.
     for key in [
         "HOME",
@@ -672,7 +663,8 @@ fn grok_environment(cmd: &mut tokio::process::Command, scratch: &Path, home: &Pa
     for key in ["CODEX_HOME", "CLAUDE_CONFIG_DIR"] {
         cmd.env_remove(key);
     }
-    cmd.env("GROK_HOME", home)
+    cmd.env("GROK_HOME", scratch.join(".grok"))
+        .env("GROK_AUTH_PATH", home.join("auth.json"))
         .env("GROK_AGENT", "verne-inference");
     for key in [
         "GROK_AGENT_DASHBOARD",
@@ -989,23 +981,43 @@ mod tests {
     }
 
     #[test]
-    fn grok_profile_checks_names_without_reading_credentials() {
-        let s = Scratch::new().unwrap();
-        assert_eq!(check_grok_home(&s.0), Err(Error::GrokSetup));
-        std::fs::write(s.0.join("auth.json"), "ZEUS-CANARY-not-json-not-read").unwrap();
-        assert_eq!(check_grok_home(&s.0), Ok(()));
+    fn grok_profile_separates_auth_from_settings_without_reading_credentials() {
+        let home = Scratch::new().unwrap();
+        let scratch = Scratch::new().unwrap();
+        assert_eq!(check_grok_home(&home.0), Err(Error::GrokSetup));
+        std::fs::write(home.0.join("auth.json"), "ZEUS-CANARY-not-json-not-read").unwrap();
         for name in [
             "config.toml",
             "hooks-paths",
-            "plugins",
-            "mcp.json",
-            "settings.json",
+            "settings_cache.json",
+            "models_cache.json",
         ] {
-            let path = s.0.join(name);
-            std::fs::write(&path, "ZEUS-CANARY-not-read").unwrap();
-            assert_eq!(check_grok_home(&s.0), Err(Error::GrokProfile));
-            std::fs::remove_file(path).unwrap();
+            std::fs::write(home.0.join(name), "ZEUS-CANARY-not-read").unwrap();
         }
+        assert_eq!(check_grok_home(&home.0), Ok(()));
+        let mut cmd = tokio::process::Command::new("unused-fixture");
+        grok_environment(&mut cmd, &scratch.0, &home.0);
+        let vars: std::collections::BTreeMap<_, _> = cmd
+            .as_std()
+            .get_envs()
+            .filter_map(|(k, v)| v.map(|v| (k.to_owned(), v.to_owned())))
+            .collect();
+        assert_eq!(
+            vars.get(std::ffi::OsStr::new("GROK_HOME")),
+            Some(&scratch.0.join(".grok").into_os_string())
+        );
+        assert_eq!(
+            vars.get(std::ffi::OsStr::new("GROK_AUTH_PATH")),
+            Some(&home.0.join("auth.json").into_os_string())
+        );
+        assert_eq!(
+            vars.get(std::ffi::OsStr::new("HOME")),
+            Some(&scratch.0.clone().into_os_string())
+        );
+        assert!(!vars.contains_key(std::ffi::OsStr::new("XAI_API_KEY")));
+        std::fs::remove_file(home.0.join("auth.json")).unwrap();
+        std::fs::create_dir(home.0.join("auth.json")).unwrap();
+        assert_eq!(check_grok_home(&home.0), Err(Error::GrokProfile));
     }
 
     async fn grok_fixture(scenario: &'static str) -> Result<String, Error> {
