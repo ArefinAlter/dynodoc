@@ -108,7 +108,8 @@ async fn initialize_agrees_a_revision_and_describes_the_server() {
         assert_eq!(result["protocolVersion"], requested);
         assert_eq!(result["serverInfo"]["name"], "dynodoc");
         assert_eq!(result["capabilities"]["tools"]["listChanged"], false);
-        assert!(result["capabilities"].get("resources").is_none());
+        assert_eq!(result["capabilities"]["resources"]["listChanged"], false);
+        assert_eq!(result["capabilities"]["prompts"]["listChanged"], false);
         let instructions = result["instructions"].as_str().unwrap();
         assert!(instructions.chars().count() <= 500);
         assert!(instructions.starts_with("dynodoc.agent/1"));
@@ -172,10 +173,10 @@ async fn notifications_and_unrelated_responses_get_no_reply() {
 async fn unknown_methods_are_method_not_found_and_keep_the_id() {
     let (server, _) = server();
     for method in [
-        "resources/list",
-        "prompts/list",
         "logging/setLevel",
         "tools/run",
+        "sampling/createMessage",
+        "roots/list",
         "",
     ] {
         let reply = one(&server, request(41, method, json!({}))).await;
@@ -778,4 +779,71 @@ async fn a_failing_or_panicking_write_costs_one_call_and_nothing_reaches_the_wri
     assert!(text(1).starts_with("dd/1 error code=not_found "));
     assert_eq!(results[1]["result"]["isError"], true);
     assert!(results[3]["result"].get("isError").is_none());
+}
+
+#[tokio::test]
+async fn test_resources_list_and_read() {
+    let (server, _) = server();
+    let reply = one(&server, request(1, "resources/list", json!({}))).await;
+    let list = &reply["result"]["resources"];
+    assert!(list.as_array().unwrap().len() >= 3);
+    assert_eq!(list[0]["uri"], "dynodoc://schema/document-ir");
+    assert_eq!(list[1]["uri"], "dynodoc://schema/change-request");
+    assert_eq!(list[2]["uri"], "dynodoc://projects");
+
+    let read_reply = one(
+        &server,
+        request(2, "resources/read", json!({"uri": "dynodoc://schema/document-ir"})),
+    )
+    .await;
+    let contents = &read_reply["result"]["contents"];
+    assert_eq!(contents[0]["uri"], "dynodoc://schema/document-ir");
+    assert!(contents[0]["text"].as_str().unwrap().contains("Dynodoc Document Event IR"));
+
+    let proj_reply = one(
+        &server,
+        request(3, "resources/read", json!({"uri": "dynodoc://projects"})),
+    )
+    .await;
+    assert!(proj_reply["result"]["contents"][0]["text"].as_str().unwrap().contains("dynodoc"));
+}
+
+#[tokio::test]
+async fn test_prompts_list_and_get() {
+    let (server, _) = server();
+    let reply = one(&server, request(1, "prompts/list", json!({}))).await;
+    let list = &reply["result"]["prompts"];
+    assert_eq!(list.as_array().unwrap().len(), 3);
+    assert_eq!(list[0]["name"], "audit_document_history");
+    assert_eq!(list[1]["name"], "review_change_request");
+    assert_eq!(list[2]["name"], "summarize_document_diff");
+
+    let get_reply = one(
+        &server,
+        request(2, "prompts/get", json!({
+            "name": "audit_document_history",
+            "arguments": {
+                "file": "Handbook.docx",
+                "branch": "main"
+            }
+        })),
+    )
+    .await;
+    let msg = &get_reply["result"]["messages"][0];
+    assert_eq!(msg["role"], "user");
+    assert!(msg["content"]["text"].as_str().unwrap().contains("Handbook.docx"));
+}
+
+#[tokio::test]
+async fn test_snake_case_tool_aliases() {
+    let (server, backend) = server();
+    let reply = one(
+        &server,
+        call(1, "dynodoc_status", json!({})),
+    )
+    .await;
+    assert_eq!(reply["result"]["isError"].as_bool(), None);
+    let seen = backend.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].1.tool, Tool::Status);
 }

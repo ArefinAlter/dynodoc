@@ -74,7 +74,18 @@ impl Tool {
     /// Any tool of the protocol by name. Whether a connection offers it is the
     /// [`Profile`]'s to say.
     pub fn parse(name: &str) -> Option<Tool> {
-        Tool::ALL.into_iter().find(|t| t.name() == name)
+        let clean = name.trim();
+        match clean {
+            "files" | "dynodoc_files" | "dynodoc_files_list" => Some(Tool::Files),
+            "outline" | "dynodoc_outline" | "dynodoc_file_outline" => Some(Tool::Outline),
+            "read" | "dynodoc_read" | "dynodoc_file_read" => Some(Tool::Read),
+            "find" | "dynodoc_find" | "dynodoc_file_find" => Some(Tool::Find),
+            "diff" | "dynodoc_diff" | "dynodoc_file_diff" => Some(Tool::Diff),
+            "propose" | "dynodoc_propose" | "dynodoc_proposal_create" => Some(Tool::Propose),
+            "submit" | "dynodoc_submit" | "dynodoc_proposal_submit" => Some(Tool::Submit),
+            "status" | "dynodoc_status" | "dynodoc_proposal_status" => Some(Tool::Status),
+            _ => Tool::ALL.into_iter().find(|t| t.name() == clean),
+        }
     }
 
     /// Does the tool write (stage or send a proposal)? These need the write scopes, are
