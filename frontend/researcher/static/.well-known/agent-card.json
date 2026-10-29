@@ -1,0 +1,60 @@
+{
+  "$schema": "https://agentclientprotocol.com/schemas/v1/agent-card.json",
+  "name": "Dynodoc Document Version Control Agent",
+  "description": "Workflow manager and version control agent for documents, spreadsheets, and presentations. Manages hash-chained revisions, drafts, and branch merges.",
+  "version": "0.1.0-alpha.1",
+  "supportedInterfaces": [
+    {
+      "url": "https://app.dynodoc.online/api/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "provider": {
+    "organization": "Verne Systems Ltd",
+    "url": "https://dynodoc.online"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "defaultInputModes": [
+    "application/json",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "get_document_history",
+      "name": "Get Document History",
+      "description": "Inspect tamper-evident SHA-256 event chains, author signatures, and commit records.",
+      "tags": ["history", "events", "audit", "sha256"],
+      "examples": ["Verify event chain integrity for quarterly-budget.xlsx"]
+    },
+    {
+      "id": "diff_revisions",
+      "name": "Diff Revisions",
+      "description": "Compute structural paragraph and cell diffs across document versions.",
+      "tags": ["diff", "changes", "comparison"],
+      "examples": ["Diff revision v1.4 and v1.5 of legal-agreement.docx"]
+    },
+    {
+      "id": "stage_branch_merge",
+      "name": "Stage Branch Merge",
+      "description": "Prepare review drafts and conflict resolution choices with human confirmation.",
+      "tags": ["merge", "conflict-resolution", "branches", "hitl"],
+      "examples": ["Stage merge from feature/annex-b into main"]
+    },
+    {
+      "id": "sync_workspace",
+      "name": "Sync Workspace",
+      "description": "Reconcile local repository changes with PostgreSQL storage and team workspaces.",
+      "tags": ["sync", "workspace", "reconcile"],
+      "examples": ["Sync pending offline drafts to team repository"]
+    }
+  ]
+}
+

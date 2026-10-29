@@ -11,7 +11,7 @@ import { ACCESS_INFO, NEVER, TOOLS, DEFAULT_INSTRUCTIONS } from '../lib/agentToo
 import { PROVIDERS, validate, active, keyHint, type LadderEntry, type ProviderKind } from '../lib/ladder.ts';
 import { serversSection } from './servers.ts';
 import { loadServers } from '../data/accounts.ts';
-import { dropEntry, forgetKey, loadAgentCfg, setAgentCfg, setConsent, storeKey, unlockKeys } from '../data/agentRun.ts';
+import { dropEntry, forgetKey, loadAgentCfg, refreshInstalledAgents, setAgentCfg, setConsent, storeKey, unlockKeys } from '../data/agentRun.ts';
 import { button, input, row, rows, section, select, toggle, textarea, segmented, pill, badge, notice, field, avatar, iconButton } from '../ui/controls.ts';
 import { openDialog, closeDialog, confirmDialog } from '../ui/layer.ts';
 import { applyAppearance } from '../theme.ts';
@@ -375,7 +375,67 @@ function providers(): Child {
     e.keyHint = keyHint(k);
     render();
   };
+  const subscriptionSection = desktop ? section(
+    'Installed agent connections',
+    'Connect directly to locally installed coding agent CLIs using your existing Pro or Team subscription. Zero token harvesting; CLIs own their authentication lifecycles.',
+    h('div', { class: 'card pad' },
+      h('div', { class: 'installed-agents-list', style: 'display: flex; flex-direction: column; gap: 10px;' },
+        [
+          { kind: 'codex' as ProviderKind, label: 'Codex', cli: 'codex' },
+          { kind: 'claude' as ProviderKind, label: 'Claude Code', cli: 'claude' },
+          { kind: 'cursor' as ProviderKind, label: 'Cursor', cli: 'agent' },
+          { kind: 'antigravity' as ProviderKind, label: 'Antigravity', cli: 'agy' },
+          { kind: 'grok' as ProviderKind, label: 'Grok Build', cli: 'grok' },
+        ].map((item) => {
+          const isInstalled = Boolean(state.installedAgents[item.kind]);
+          const existing = list.find((e) => e.kind === item.kind && e.enabled);
+          const isTop = use?.id === existing?.id;
+          return h('div', { style: 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-hover); border-radius: 6px;' },
+            h('div', { style: 'display: flex; align-items: center; gap: 10px;' },
+              h('strong', null, item.label),
+              h('code', { class: 'small muted' }, item.cli),
+              pill(isInstalled ? 'CLI found' : 'CLI not found', isInstalled ? 'success' : 'neutral'),
+              existing ? badge('Active', 'info') : null,
+              isTop ? pill('in use', 'success') : null
+            ),
+            h('div', { style: 'display: flex; gap: 8px;' },
+              existing
+                ? button('Enabled ✓', { size: 'sm', variant: 'ghost', disabled: true })
+                : button('Enable in Agent ✓', {
+                    size: 'sm',
+                    variant: 'primary',
+                    disabled: !isInstalled,
+                    onClick: async () => {
+                      let entry = list.find((e) => e.kind === item.kind);
+                      if (!entry) {
+                        const pi = PROVIDERS.find((x) => x.kind === item.kind)!;
+                        entry = { id: `lp_${item.kind}`, kind: item.kind, enabled: true, model: pi.model, base: pi.base, keyHint: '' };
+                        list.unshift(entry);
+                      } else {
+                        entry.enabled = true;
+                        const idx = list.indexOf(entry);
+                        if (idx > 0) {
+                          list.splice(idx, 1);
+                          list.unshift(entry);
+                        }
+                      }
+                      await setConsent(entry.id, `${item.kind}.local-agent.invalid`, true);
+                      const activeThread = state.ui.agent.threads.find((t) => t.id === state.ui.agent.active);
+                      if (activeThread) {
+                        activeThread.model = entry.id;
+                      }
+                      toast('success', 'Subscription enabled', `${item.label} is now active in Agent`);
+                      render();
+                    }
+                  })
+            )
+          );
+        })
+      )
+    )
+  ) : null;
   return [
+    subscriptionSection,
     section('Provider ladder', desktop ? 'Use an API key or a supported installed agent’s existing sign-in. A new thread uses the first enabled entry that is complete; a thread can pick another in its composer. Requests go from this computer straight to the provider, and only after you have seen what would be sent and allowed that address once.' : 'Bring your own key. The agent would use the first enabled entry that is complete. A hosted copy calls no model: the ladder is configured and checked, and the agent’s replies are prepared.',
       notice('info', desktop
         ? `Keys are kept in ${cfg?.keys_where ?? 'the operating system’s credential store'}. They are never written to the preferences file, a log or this window: after you store one, only “stored” and its last four characters are shown.`

@@ -49,6 +49,7 @@
     "allow-agent-tool-result",
     "allow-agent-cancel",
     "allow-agent-usage",
+    "allow-agent-installed-status",
     "allow-accounts-list",
     "allow-account-add",
     "allow-account-remove",

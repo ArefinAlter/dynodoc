@@ -335,6 +335,8 @@ pub fn run() {
             #[cfg(desktop)]
             cmd_agent::agent_usage,
             #[cfg(desktop)]
+            cmd_agent::agent_installed_status,
+            #[cfg(desktop)]
             cmd_accounts::accounts_list,
             #[cfg(desktop)]
             cmd_accounts::account_add,

@@ -45,6 +45,7 @@ const COMMANDS: &[&str] = &[
     "agent_tool_result",
     "agent_cancel",
     "agent_usage",
+    "agent_installed_status",
     "accounts_list",
     "account_add",
     "account_remove",
