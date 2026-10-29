@@ -34,10 +34,10 @@ export type IndexablePage = {
 export const INDEXABLE_PAGES: IndexablePage[] = [
   {
     path: '/try',
-    title: `Try the pre-alpha · ${SITE_NAME}`,
+    title: `Download the desktop workflow manager · ${SITE_NAME}`,
     description:
-      'Try Dynodoc 0.0.1b, a pre-alpha: the unsigned desktop app for Windows and Linux that keeps your workspace on your computer, or a sample workspace in the browser, removed after 24 hours, with file sizes and SHA-256 sums.',
-    lastmod: '2026-10-27',
+      'Download Dynodoc for Windows (0.1 alpha 1) or Linux (0.0.1c pre-alpha). Manage document repositories, reviews, history and sync beside your editors, with platform-specific file sizes and SHA-256 checksums.',
+    lastmod: '2026-10-29',
     changefreq: 'weekly',
     priority: '0.9'
   },

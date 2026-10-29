@@ -9,10 +9,10 @@
   import { detectOS, type DetectedOS } from '$lib/site/os';
 
   const meta = pageMeta('/try');
-  const title = meta?.title ?? 'Try the pre-alpha · Dynodoc';
+  const title = meta?.title ?? 'Download Dynodoc · Dynodoc';
   const description =
     meta?.description ??
-    'Try Dynodoc 0.0.1b: the desktop app for Windows and Linux that keeps your workspace on your own computer, or a sample workspace in the browser.';
+    'Download the Dynodoc workflow manager: Windows 0.1 alpha 1 or Linux 0.0.1c. Manage repositories, reviews, history and sync beside your document editors.';
   const workspace = $derived(workspaceHref(env.PUBLIC_WORKSPACE_URL));
 
   // The visitor's platform, after mount only: the server-rendered page has equal cards.
@@ -35,14 +35,18 @@
 <main id="main" use:scrollable>
   <header class="hero dotgrid dotgrid--fade spotlight" use:spotlight>
     <div class="container hero__copy">
-      <span class="badge">Pre-alpha release · {RELEASE.tag}</span>
-      <h1 class="h-1">Try the pre-alpha</h1>
-      <p class="lede">The desktop app manages repositories, changes, history, reviews and sync. Edit in Word, Excel, PowerPoint, Google Docs, Sheets or Slides through their Dynodoc add-in or extension. Open the full platform in your browser.</p>
+      <span class="badge">Windows alpha · {RELEASE.tag}</span>
+      <h1 class="h-1">Try Dynodoc</h1>
       <p class="lede">
-        Dynodoc 0.0.1b is a pre-alpha: early software, so expect rough edges, missing pieces and
-        changes. The desktop app now works on its own: it keeps your documents and their history in
-        a database on your computer, with no server and no account. Sign in to a server only when
-        you want to sync. You can also try a sample workspace in your browser.
+        The desktop app manages repositories, changes, history, reviews and sync. Edit in Word,
+        Excel, PowerPoint, Google Docs, Sheets or Slides through their Dynodoc add-in or extension.
+        Open the full platform in your browser.
+      </p>
+      <p class="lede">
+        Windows 0.1 alpha 1 is the latest development release; Linux remains on 0.0.1c pre-alpha.
+        The desktop manager keeps repositories and their history in a database on your computer,
+        with no server account needed for local work. Connect to a server when you want to sync, or
+        try a sample workspace in your browser.
       </p>
       <div class="actions">
         <Btn
@@ -96,18 +100,18 @@
 
   <Section
     id="download"
-    title="Desktop app"
-    lede="The desktop app starts its own database and engine, so the workspace lives on your computer. It imports and exports Word, Excel and PowerPoint files, keeps their history, drafts, change requests and reviews, and can use your own model provider for the agent. Sign in with your browser to the hosted server or one you run to sync a project. macOS is not built yet."
+    title="Desktop workflow manager"
+    lede="Manage document repositories, history, drafts, change requests, reviews and synchronization. Keep editing in Office or Google editors through the Dynodoc add-ins and extensions, and open the full web workspace in your browser. Windows alpha also connects to supported installed coding-agent sign-ins alongside API-key providers. macOS is not built yet."
   >
     <div data-reveal>
       <DownloadCards {os} />
     </div>
     <ul class="facts" data-reveal>
       <li>
-        <strong>Nothing leaves your computer by itself.</strong> The agent calls a model provider only
-        when you add your own key, allow that address and ask; keys and sign-ins are kept in the operating
-        system's credential store. The installer is unsigned, so Windows SmartScreen warns first. The
-        release also has engine-cli on its own for Windows and Linux.
+        <strong>Choose what connects.</strong> Keep repositories local or connect a server for sync. Agent
+        requests use the provider or supported installed agent you select. API keys stay in the operating
+        system's credential store; installed agents manage their own sign-in. The Windows installer is
+        unsigned. Each platform also offers engine-cli as a separate download.
       </li>
       <li>
         <strong>No auto-update, no telemetry of its own.</strong> Newer releases appear on the

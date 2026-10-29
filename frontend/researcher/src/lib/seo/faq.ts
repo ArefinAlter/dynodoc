@@ -44,6 +44,6 @@ export const FAQ: FaqEntry[] = [
   {
     question: 'What does it cost, and who can use it?',
     answer:
-      'There is no paid plan and no payment flow yet. The hosted workspace at app.dynodoc.online is a test deployment with email and Google sign-in, and projects are invite-only: only their members can see them. The 0.0.1b pre-alpha lets you start a sample workspace without an account (removed after 24 hours) and download an unsigned desktop app for Windows and Linux that keeps your workspace on your own computer. The add-ins are test installs, not marketplace listings. The engine, API and command-line tools are open source, so you can run those yourself today. The terms and privacy policy are drafts and are not yet effective.'
+      'There is no paid plan and no payment flow yet. The hosted workspace at app.dynodoc.online is a test deployment with email and Google sign-in, and projects are invite-only: only their members can see them. You can start a sample workspace without an account (removed after 24 hours), or download the unsigned desktop workflow manager: Windows 0.1 alpha 1 and Linux 0.0.1c pre-alpha. It manages repositories, reviews, history and sync while you edit in Office or Google editors through the add-ins and extensions. The add-ins are test installs, not marketplace listings. The engine, API and command-line tools are open source, so you can run those yourself today. The terms and privacy policy are drafts and are not yet effective.'
   }
 ];
