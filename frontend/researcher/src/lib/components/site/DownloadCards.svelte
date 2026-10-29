@@ -9,7 +9,7 @@
   OS logos: Simple Icons (CC0), "windows" from simple-icons 10.4.0, "linux" and "apple" from 15.0.0.
 -->
 <script lang="ts">
-  import { PLATFORMS, RELEASE, SAMPLE_WORKSPACE_URL, size } from '$lib/site/release';
+  import { PLATFORMS, SAMPLE_WORKSPACE_URL, size } from '$lib/site/release';
   import type { DetectedOS } from '$lib/site/os';
 
   let { os = '' }: { os?: DetectedOS } = $props();
@@ -22,7 +22,6 @@
     mac: 'M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701'
   };
   const ext = (f: string) => (f.match(/(.tar.gz|.[A-Za-z0-9]+)$/) || [''])[0];
-  const sumsUrl = RELEASE.sums;
 </script>
 
 {#snippet logo(name: keyof typeof LOGO)}
@@ -76,6 +75,7 @@
           </div>
           {#if os === p.os}<span class="dl-badge">Your system</span>{/if}
         </header>
+        <p class="dl-note">{p.release.name}</p>
         <a class="dl-btn dl-btn--primary" href={p.primary.url} title={p.primary.file}>
           {@render icon('download', false)}
           <span class="dl-btn-text">
@@ -99,6 +99,14 @@
             </li>
           {/each}
         </ul>
+        <div class="dl-actions">
+          <a class="dl-link" href={p.release.page}
+            >{@render icon('external', true)}{p.release.tag} release notes</a
+          >
+          <a class="dl-link" href={p.release.sums}
+            >{@render icon('shield', true)}{p.name} SHA-256 checksums</a
+          >
+        </div>
       </article>
     {/each}
   </div>
@@ -123,13 +131,10 @@
         {@render icon('globe', false)}
         <span class="dl-btn-label">Open in the browser</span>
       </a>
-      <a class="dl-link" href={RELEASE.page}
-        >{@render icon('external', true)}All files and release notes on GitHub</a
-      >
-      <a class="dl-link" href={sumsUrl}>{@render icon('shield', true)}Verify downloads (SHA-256)</a>
     </div>
     <p class="dl-note">
-      To verify a file, compare its hash with the line in <a href={sumsUrl}>{RELEASE.sumsFile}</a>:
+      To verify a file, compare its hash with the line in the platform's <code>SHA256SUMS.txt</code
+      >:
       <code>certutil -hashfile &lt;file&gt; SHA256</code> on Windows,
       <code>sha256sum &lt;file&gt;</code> on Linux.
     </p>
@@ -178,9 +183,6 @@
     color: var(--color-accent-strong);
     background: var(--color-accent-bg);
     border-color: var(--color-accent-border);
-  }
-  .dl-note a {
-    color: var(--dl-link);
   }
 
   .dl {

@@ -8,6 +8,11 @@ including Grok Build with a dedicated sign-in. Validation and exact limits are r
 [ACCEPTANCE-0.1.0-alpha.1.md](ACCEPTANCE-0.1.0-alpha.1.md). The engine component and schema47 are
 unchanged; the dated server deployment records below are independent of this desktop release.
 
+The marketing download catalogue now separates Windows `v0.1.0-alpha.1` from the last published
+Linux desktop release, `v0.0.1c`. Each platform has its own actual asset sizes, release notes and
+checksum link. The Try page and discovery metadata describe the desktop as the repository/review/sync
+manager beside Office and Google editors. This website update requires no engine, API or database change.
+
 
 ## Live: schema 47 release (23 October 2026, 05:35 UTC)
 
