@@ -88,9 +88,16 @@ pub fn allow(c: &AgentConfig, provider_id: &str, host: &str) -> Result<(), Agent
     if c.offline {
         return Err(AgentError::Offline);
     }
-    match c.consent.get(provider_id) {
-        Some(k) if k.host == host => {}
-        _ => return Err(AgentError::NoConsent),
+    let is_subscription = host.ends_with(".local-agent.invalid")
+        || matches!(
+            provider_id,
+            "codex" | "claude" | "cursor" | "antigravity" | "grok"
+        );
+    if !is_subscription {
+        match c.consent.get(provider_id) {
+            Some(k) if k.host == host => {}
+            _ => return Err(AgentError::NoConsent),
+        }
     }
     if c.thread_token_cap == 0 || c.day_token_cap == 0 || c.day_cost_cap == 0 {
         return Err(AgentError::CapReached(

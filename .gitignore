@@ -40,3 +40,4 @@ Thumbs.db
 
 # Agent worktrees created by Claude Code
 .claude/worktrees/
+.atlas/

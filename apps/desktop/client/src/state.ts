@@ -271,6 +271,8 @@ export const state = {
   keys: new Map<string, string>(),
   /** The desktop app's agent settings (offline, consent, caps, prices); null until read. */
   agentCfg: null as AgentCfg | null,
+  /** Installed agent CLIs detected on this computer (codex, claude, cursor, antigravity, grok). */
+  installedAgents: {} as Record<string, boolean>,
   /** Servers the person signed in to from the app, and the local projects linked to them
    *  (data/accounts.ts, data/sync.ts). */
   servers: {

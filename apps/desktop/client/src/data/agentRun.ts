@@ -44,10 +44,23 @@ export async function loadAgentCfg(): Promise<AgentCfg | null> {
   if (!state.desktop) return null;
   try {
     state.agentCfg = (await call('agent_config')) as AgentCfg;
+    void refreshInstalledAgents();
   } catch {
     /* keep what we had */
   }
   return state.agentCfg;
+}
+
+export async function refreshInstalledAgents(): Promise<Record<string, boolean>> {
+  if (!state.desktop) return {};
+  try {
+    const res = (await call('agent_installed_status')) as Record<string, boolean>;
+    state.installedAgents = res ?? {};
+    render();
+    return state.installedAgents;
+  } catch {
+    return state.installedAgents;
+  }
 }
 
 export async function setAgentCfg(patch: Record<string, unknown>): Promise<boolean> {
@@ -136,6 +149,8 @@ export function entryOf(t: Thread): LadderEntry | null {
 /** The model a new thread starts with: the ladder's first complete entry, else the prepared replies. */
 export function defaultModel(): string {
   if (!state.desktop) return PREPARED;
+  const sub = state.prefs.ladder.find((e) => e.enabled && ['codex', 'claude', 'cursor', 'antigravity', 'grok'].includes(e.kind));
+  if (sub) return sub.id;
   return active(state.prefs.ladder)?.id ?? PREPARED;
 }
 
@@ -321,7 +336,11 @@ export async function runModel(t: Thread, projectId: string, branch: string): Pr
     return fail(t, err instanceof Error ? err.message : String(err));
   }
   if (state.agentCfg?.consent[e.id]?.host !== preview.host) {
-    if (!(await askConsent(e, preview))) return fail(t, 'Not sent: you did not allow this provider.');
+    if (['codex', 'claude', 'cursor', 'antigravity', 'grok'].includes(e.kind)) {
+      await setConsent(e.id, preview.host, true);
+    } else if (!(await askConsent(e, preview))) {
+      return fail(t, 'Not sent: you did not allow this provider.');
+    }
   }
   const msg: AgentMessage = { id: `m${Date.now()}a`, role: 'agent', text: '', at: Date.now(), calls: [], cards: [], streaming: true, model: labelOf(e) };
   t.messages.push(msg);

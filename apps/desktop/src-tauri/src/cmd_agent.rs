@@ -19,7 +19,7 @@ use tauri::{Manager, Webview};
 use tokio::sync::{mpsc, watch};
 
 #[cfg(test)]
-pub const COMMANDS: [&str; 12] = [
+pub const COMMANDS: [&str; 13] = [
     "agent_config",
     "agent_config_set",
     "agent_consent",
@@ -32,6 +32,7 @@ pub const COMMANDS: [&str; 12] = [
     "agent_tool_result",
     "agent_cancel",
     "agent_usage",
+    "agent_installed_status",
 ];
 
 fn state_of(webview: &Webview) -> tauri::State<'_, AppState> {
@@ -540,4 +541,20 @@ pub async fn agent_usage(webview: Webview, thread: Option<String>) -> Result<Usa
         day_tokens: d,
         day_cost_micros: c,
     })
+}
+
+/// Which subscription agent CLIs are installed on this computer.
+#[tauri::command]
+pub fn agent_installed_status(
+    webview: Webview,
+) -> Result<BTreeMap<String, bool>, String> {
+    require_launcher(webview.url())?;
+    let mut map = BTreeMap::new();
+    for agent in ["codex", "claude", "cursor", "antigravity", "grok"] {
+        map.insert(
+            agent.to_string(),
+            crate::agent::client::local_agent::installed(agent),
+        );
+    }
+    Ok(map)
 }

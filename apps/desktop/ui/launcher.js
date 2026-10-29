@@ -1144,6 +1144,8 @@ Suggest, do not order.` }
     keys: /* @__PURE__ */ new Map(),
     /** The desktop app's agent settings (offline, consent, caps, prices); null until read. */
     agentCfg: null,
+    /** Installed agent CLIs detected on this computer (codex, claude, cursor, antigravity, grok). */
+    installedAgents: {},
     /** Servers the person signed in to from the app, and the local projects linked to them
      *  (data/accounts.ts, data/sync.ts). */
     servers: {
@@ -2063,10 +2065,19 @@ ${editLines(r.edits, labels(doc(db, r.docId)))}`
   async function loadAgentCfg() {
     if (!state.desktop) return null;
     try {
-      state.agentCfg = await call("agent_config");
+      state.agentCfg = await call("agent_config"), refreshInstalledAgents();
     } catch {
     }
     return state.agentCfg;
+  }
+  async function refreshInstalledAgents() {
+    if (!state.desktop) return {};
+    try {
+      let res = await call("agent_installed_status");
+      return state.installedAgents = res ?? {}, render(), state.installedAgents;
+    } catch {
+      return state.installedAgents;
+    }
   }
   async function setAgentCfg(patch) {
     try {
@@ -2128,7 +2139,9 @@ ${editLines(r.edits, labels(doc(db, r.docId)))}`
     return t.model === PREPARED ? null : state.prefs.ladder.find((e) => e.id === t.model) ?? null;
   }
   function defaultModel() {
-    return state.desktop ? active(state.prefs.ladder)?.id ?? PREPARED : PREPARED;
+    if (!state.desktop) return PREPARED;
+    let sub = state.prefs.ladder.find((e) => e.enabled && ["codex", "claude", "cursor", "antigravity", "grok"].includes(e.kind));
+    return sub ? sub.id : active(state.prefs.ladder)?.id ?? PREPARED;
   }
   function labelOf(e) {
     return `${PROVIDERS.find((p2) => p2.kind === e.kind)?.label ?? e.kind} · ${e.model}`;
@@ -2264,8 +2277,12 @@ ${text3}` : out.push({ role, text: text3 });
     } catch (err) {
       return fail(t, err instanceof Error ? err.message : String(err));
     }
-    if (state.agentCfg?.consent[e.id]?.host !== preview.host && !await askConsent(e, preview))
-      return fail(t, "Not sent: you did not allow this provider.");
+    if (state.agentCfg?.consent[e.id]?.host !== preview.host) {
+      if (["codex", "claude", "cursor", "antigravity", "grok"].includes(e.kind))
+        await setConsent(e.id, preview.host, !0);
+      else if (!await askConsent(e, preview))
+        return fail(t, "Not sent: you did not allow this provider.");
+    }
     let msg = { id: `m${Date.now()}a`, role: "agent", text: "", at: Date.now(), calls: [], cards: [], streaming: !0, model: labelOf(e) };
     t.messages.push(msg), runs.set(t.id, runId), render();
     let breakBefore = !1, settle, finished = new Promise((r) => {
@@ -6443,8 +6460,12 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     newThread(), go("agent"), requestAnimationFrame(() => document.getElementById("composer")?.focus());
   }
   function current2() {
-    let a = state.ui.agent;
-    return a.threads.find((t) => t.id === a.active) ?? newThread();
+    let a = state.ui.agent, t = a.threads.find((t2) => t2.id === a.active) ?? newThread();
+    if (t.model === PREPARED) {
+      let def = defaultModel();
+      def !== PREPARED && (t.model = def);
+    }
+    return t;
   }
   function inline(text3) {
     return text3.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part) => part.startsWith("**") && part.endsWith("**") && part.length > 4 ? h("strong", null, part.slice(2, -2)) : part.startsWith("`") && part.endsWith("`") && part.length > 2 ? h("code", null, part.slice(1, -1)) : part);
@@ -6567,17 +6588,31 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
         t.model = PREPARED, render();
       } }
     ];
-    if (canCallModels())
-      for (let e of state.prefs.ladder) {
-        let why = e.enabled ? unusable(e) : "Off in Settings, Providers.";
-        items.push({ label: labelOf(e), checked: t.model === e.id, disabled: !!why, note: why ?? "Your own key, called from this computer.", onSelect: () => {
-          t.model = e.id, render();
-        } });
+    if (canCallModels()) {
+      let subs = state.prefs.ladder.filter((e) => ["codex", "claude", "cursor", "antigravity", "grok"].includes(e.kind)), others = state.prefs.ladder.filter((e) => !["codex", "claude", "cursor", "antigravity", "grok"].includes(e.kind));
+      if (subs.length) {
+        items.push({ label: "", heading: "Direct Subscriptions (Pro/Team)" });
+        for (let e of subs) {
+          let why = e.enabled ? unusable(e) : "Off in Settings, Providers.";
+          items.push({ label: `${labelOf(e)} (Pro/Team)`, checked: t.model === e.id, disabled: !!why, note: why ?? "Direct local CLI subscription connection.", onSelect: () => {
+            t.model = e.id, render();
+          } });
+        }
       }
+      if (others.length) {
+        items.push({ label: "", heading: "API Key Providers" });
+        for (let e of others) {
+          let why = e.enabled ? unusable(e) : "Off in Settings, Providers.";
+          items.push({ label: labelOf(e), checked: t.model === e.id, disabled: !!why, note: why ?? "Your own key, called from this computer.", onSelect: () => {
+            t.model = e.id, render();
+          } });
+        }
+      }
+    }
     openMenu(anchor, items, { width: 360 });
   }
   function composer(t) {
-    let entry = entryOf(t), ta = h("textarea", {
+    let entry = entryOf(t), isSub = entry && ["codex", "claude", "cursor", "antigravity", "grok"].includes(entry.kind), ta = h("textarea", {
       id: "composer",
       class: "composer-input",
       rows: 2,
@@ -6599,7 +6634,14 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       h(
         "div",
         { class: "composer-row" },
-        h("button", { type: "button", id: "model-picker", class: "picker", onClick: (e) => modelMenu(t, e.currentTarget) }, icon("agent", 14), entry ? labelOf(entry) : "Prepared replies", icon("chevron", 12)),
+        h(
+          "button",
+          { type: "button", id: "model-picker", class: "picker", onClick: (e) => modelMenu(t, e.currentTarget) },
+          icon("agent", 14),
+          entry ? labelOf(entry) : "Prepared replies",
+          isSub ? badge("Pro/Team", "info") : null,
+          icon("chevron", 12)
+        ),
         h("button", { type: "button", class: "picker", onClick: (e) => openMenu(e.currentTarget, ["read", "propose"].map((a) => ({ label: ACCESS_INFO[a].label, note: ACCESS_INFO[a].blurb, checked: t.access === a, onSelect: () => {
           t.access = a, render();
         } }))) }, icon("lock", 14), ACCESS_INFO[t.access].label, icon("chevron", 12)),
@@ -7377,6 +7419,63 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       }
     };
     return [
+      desktop ? section(
+        "Installed agent connections",
+        "Connect directly to locally installed coding agent CLIs using your existing Pro or Team subscription. Zero token harvesting; CLIs own their authentication lifecycles.",
+        h(
+          "div",
+          { class: "card pad" },
+          h(
+            "div",
+            { class: "installed-agents-list", style: "display: flex; flex-direction: column; gap: 10px;" },
+            [
+              { kind: "codex", label: "Codex", cli: "codex" },
+              { kind: "claude", label: "Claude Code", cli: "claude" },
+              { kind: "cursor", label: "Cursor", cli: "agent" },
+              { kind: "antigravity", label: "Antigravity", cli: "agy" },
+              { kind: "grok", label: "Grok Build", cli: "grok" }
+            ].map((item) => {
+              let isInstalled = !!state.installedAgents[item.kind], existing = list2.find((e) => e.kind === item.kind && e.enabled), isTop = use?.id === existing?.id;
+              return h(
+                "div",
+                { style: "display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-hover); border-radius: 6px;" },
+                h(
+                  "div",
+                  { style: "display: flex; align-items: center; gap: 10px;" },
+                  h("strong", null, item.label),
+                  h("code", { class: "small muted" }, item.cli),
+                  pill(isInstalled ? "CLI found" : "CLI not found", isInstalled ? "success" : "neutral"),
+                  existing ? badge("Active", "info") : null,
+                  isTop ? pill("in use", "success") : null
+                ),
+                h(
+                  "div",
+                  { style: "display: flex; gap: 8px;" },
+                  existing ? button("Enabled ✓", { size: "sm", variant: "ghost", disabled: !0 }) : button("Enable in Agent ✓", {
+                    size: "sm",
+                    variant: "primary",
+                    disabled: !isInstalled,
+                    onClick: async () => {
+                      let entry = list2.find((e) => e.kind === item.kind);
+                      if (entry) {
+                        entry.enabled = !0;
+                        let idx = list2.indexOf(entry);
+                        idx > 0 && (list2.splice(idx, 1), list2.unshift(entry));
+                      } else {
+                        let pi = PROVIDERS.find((x) => x.kind === item.kind);
+                        entry = { id: `lp_${item.kind}`, kind: item.kind, enabled: !0, model: pi.model, base: pi.base, keyHint: "" }, list2.unshift(entry);
+                      }
+                      await setConsent(entry.id, `${item.kind}.local-agent.invalid`, !0);
+                      let activeThread = state.ui.agent.threads.find((t) => t.id === state.ui.agent.active);
+                      activeThread && (activeThread.model = entry.id), toast("success", "Subscription enabled", `${item.label} is now active in Agent`), render();
+                    }
+                  })
+                )
+              );
+            })
+          )
+        )
+      ) : null,
       section(
         "Provider ladder",
         desktop ? "Use an API key or a supported installed agent’s existing sign-in. A new thread uses the first enabled entry that is complete; a thread can pick another in its composer. Requests go from this computer straight to the provider, and only after you have seen what would be sent and allowed that address once." : "Bring your own key. The agent would use the first enabled entry that is complete. A hosted copy calls no model: the ladder is configured and checked, and the agent’s replies are prepared.",

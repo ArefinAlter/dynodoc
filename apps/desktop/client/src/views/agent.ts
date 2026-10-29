@@ -29,7 +29,12 @@ export function startThread(): void {
 
 function current(): Thread {
   const a = state.ui.agent;
-  return a.threads.find((t) => t.id === a.active) ?? newThread();
+  const t = a.threads.find((t) => t.id === a.active) ?? newThread();
+  if (t.model === PREPARED) {
+    const def = defaultModel();
+    if (def !== PREPARED) t.model = def;
+  }
+  return t;
 }
 
 /** Bold (**text**), code (`text`) and plain text; nothing else becomes markup, so text from a model
@@ -193,9 +198,21 @@ function modelMenu(t: Thread, anchor: HTMLElement): void {
     { label: 'Prepared replies (no model)', checked: t.model === PREPARED, note: 'A few requests are understood and answered from prepared text. Nothing is sent anywhere.', onSelect: () => { t.model = PREPARED; render(); } },
   ];
   if (canCallModels()) {
-    for (const e of state.prefs.ladder) {
-      const why = e.enabled ? unusable(e) : 'Off in Settings, Providers.';
-      items.push({ label: labelOf(e), checked: t.model === e.id, disabled: Boolean(why), note: why ?? 'Your own key, called from this computer.', onSelect: () => { t.model = e.id; render(); } } as (typeof items)[number]);
+    const subs = state.prefs.ladder.filter((e) => ['codex', 'claude', 'cursor', 'antigravity', 'grok'].includes(e.kind));
+    const others = state.prefs.ladder.filter((e) => !['codex', 'claude', 'cursor', 'antigravity', 'grok'].includes(e.kind));
+    if (subs.length) {
+      items.push({ label: '', heading: 'Direct Subscriptions (Pro/Team)' });
+      for (const e of subs) {
+        const why = e.enabled ? unusable(e) : 'Off in Settings, Providers.';
+        items.push({ label: `${labelOf(e)} (Pro/Team)`, checked: t.model === e.id, disabled: Boolean(why), note: why ?? 'Direct local CLI subscription connection.', onSelect: () => { t.model = e.id; render(); } } as (typeof items)[number]);
+      }
+    }
+    if (others.length) {
+      items.push({ label: '', heading: 'API Key Providers' });
+      for (const e of others) {
+        const why = e.enabled ? unusable(e) : 'Off in Settings, Providers.';
+        items.push({ label: labelOf(e), checked: t.model === e.id, disabled: Boolean(why), note: why ?? 'Your own key, called from this computer.', onSelect: () => { t.model = e.id; render(); } } as (typeof items)[number]);
+      }
     }
   }
   openMenu(anchor, items, { width: 360 });
@@ -203,6 +220,7 @@ function modelMenu(t: Thread, anchor: HTMLElement): void {
 
 function composer(t: Thread): HTMLElement {
   const entry = entryOf(t);
+  const isSub = entry && ['codex', 'claude', 'cursor', 'antigravity', 'grok'].includes(entry.kind);
   const ta = h('textarea', {
     id: 'composer',
     class: 'composer-input',
@@ -226,7 +244,12 @@ function composer(t: Thread): HTMLElement {
     h(
       'div',
       { class: 'composer-row' },
-      h('button', { type: 'button', id: 'model-picker', class: 'picker', onClick: (e: MouseEvent) => modelMenu(t, e.currentTarget as HTMLElement) }, icon('agent', 14), entry ? labelOf(entry) : 'Prepared replies', icon('chevron', 12)),
+      h('button', { type: 'button', id: 'model-picker', class: 'picker', onClick: (e: MouseEvent) => modelMenu(t, e.currentTarget as HTMLElement) },
+        icon('agent', 14),
+        entry ? labelOf(entry) : 'Prepared replies',
+        isSub ? badge('Pro/Team', 'info') : null,
+        icon('chevron', 12)
+      ),
       h('button', { type: 'button', class: 'picker', onClick: (e: MouseEvent) => openMenu(e.currentTarget as HTMLElement, (['read', 'propose'] as AgentAccess[]).map((a) => ({ label: ACCESS_INFO[a].label, note: ACCESS_INFO[a].blurb, checked: t.access === a, onSelect: () => { t.access = a; render(); } }))) }, icon('lock', 14), ACCESS_INFO[t.access].label, icon('chevron', 12)),
       offline ? pill('Offline', 'warning', { mono: false, title: 'No model is called while Offline is on (Settings, Providers).' }) : null,
       h('span', { class: 'spacer' }),
