@@ -184,6 +184,10 @@ impl<B: Backend> Server<B> {
             "ping" => Ok(json!({})),
             "tools/list" => Ok(self.list_tools(&params)),
             "tools/call" => self.call_tool(params).await,
+            "resources/list" => Ok(self.list_resources(&params)),
+            "resources/read" => self.read_resource(params).await,
+            "prompts/list" => Ok(self.list_prompts(&params)),
+            "prompts/get" => self.get_prompt(params).await,
             _ => Err(failure(rpc::METHOD_NOT_FOUND, "Method not found")),
         }
     }
@@ -204,7 +208,11 @@ impl<B: Backend> Server<B> {
     }
 
     fn capabilities(&self) -> Value {
-        json!({ "tools": { "listChanged": false } })
+        json!({
+            "tools": { "listChanged": false },
+            "resources": { "subscribe": false, "listChanged": false },
+            "prompts": { "listChanged": false }
+        })
     }
 
     fn initialize(&self, params: &Value) -> Result<Value, Failure> {
@@ -308,6 +316,216 @@ impl<B: Backend> Server<B> {
             }
         };
         Ok(tool_result(output))
+    }
+
+    fn list_resources(&self, _params: &Value) -> Value {
+        json!({
+            "resources": [
+                {
+                    "uri": "dynodoc://schema/document-ir",
+                    "name": "Document Event & Block IR Schema",
+                    "description": "JSON Schema describing Dynodoc's tamper-evident SHA-256 hash-chained revisions, structured paragraph/cell blocks, and event records.",
+                    "mimeType": "application/schema+json"
+                },
+                {
+                    "uri": "dynodoc://schema/change-request",
+                    "name": "Change Request & Review Workflow Schema",
+                    "description": "JSON Schema for draft reviews, change comments, approval gates, and human-in-the-loop merge requirements.",
+                    "mimeType": "application/schema+json"
+                },
+                {
+                    "uri": "dynodoc://projects",
+                    "name": "Active Repository Catalog",
+                    "description": "Active repository metadata, branch state, and document outline catalog.",
+                    "mimeType": "application/json"
+                }
+            ]
+        })
+    }
+
+    async fn read_resource(&self, params: Value) -> Result<Value, Failure> {
+        let Value::Object(params) = params else {
+            return Err(failure(rpc::INVALID_PARAMS, "params must be an object"));
+        };
+        let uri = params
+            .get("uri")
+            .and_then(Value::as_str)
+            .ok_or_else(|| failure(rpc::INVALID_PARAMS, "uri is required"))?;
+
+        let contents = match uri {
+            "dynodoc://schema/document-ir" => json!({
+                "type": "object",
+                "title": "Dynodoc Document Event IR",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "description": "Tamper-evident SHA-256 hash-chained document revision events.",
+                "properties": {
+                    "document_id": { "type": "string", "format": "uuid" },
+                    "sequence": { "type": "integer", "minimum": 1 },
+                    "chain_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "prev_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "blocks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "string" },
+                                "type": { "type": "string", "enum": ["paragraph", "heading", "cell", "slide", "table"] },
+                                "text": { "type": "string" },
+                                "hash": { "type": "string" }
+                            },
+                            "required": ["id", "type", "text"]
+                        }
+                    }
+                },
+                "required": ["document_id", "sequence", "chain_hash", "blocks"]
+            }),
+            "dynodoc://schema/change-request" => json!({
+                "type": "object",
+                "title": "Dynodoc Change Request Workflow",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "description": "Draft reviews, approval gates, and conflict choices.",
+                "properties": {
+                    "request_number": { "type": "integer" },
+                    "state": { "type": "string", "enum": ["open", "merged", "closed"] },
+                    "source_branch": { "type": "string" },
+                    "target_branch": { "type": "string" },
+                    "author": { "type": "string" },
+                    "reviews": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "reviewer": { "type": "string" },
+                                "status": { "type": "string", "enum": ["approved", "changes_requested", "commented"] },
+                                "comments": { "type": "array" }
+                            }
+                        }
+                    }
+                },
+                "required": ["request_number", "state", "source_branch", "target_branch"]
+            }),
+            "dynodoc://projects" => json!({
+                "protocol": PROTOCOL,
+                "profile": self.inner.profile.name(),
+                "server": SERVER_NAME,
+                "access": if self.inner.profile.offers(Tool::Propose) { "propose" } else { "read" },
+                "available_tools": self.inner.profile.tools().iter().map(|t| t.name()).collect::<Vec<_>>(),
+                "supported_formats": ["docx", "xlsx", "pptx", "markdown", "ir"],
+                "status": "ready"
+            }),
+            _ => {
+                return Err(failure(rpc::INVALID_PARAMS, "Resource not found"));
+            }
+        };
+
+        Ok(json!({
+            "contents": [
+                {
+                    "uri": uri,
+                    "mimeType": "application/json",
+                    "text": serde_json::to_string_pretty(&contents).unwrap_or_default()
+                }
+            ]
+        }))
+    }
+
+    fn list_prompts(&self, _params: &Value) -> Value {
+        json!({
+            "prompts": [
+                {
+                    "name": "audit_document_history",
+                    "description": "Inspect tamper-evident SHA-256 event chains, author signatures, and commit records to audit document provenance.",
+                    "arguments": [
+                        { "name": "file", "description": "File name (e.g. Handbook.docx) or UUID to audit", "required": true },
+                        { "name": "branch", "description": "Branch or draft name to inspect (defaults to main)", "required": false }
+                    ]
+                },
+                {
+                    "name": "review_change_request",
+                    "description": "Guided review prompt template to analyze a change request diff, check conflicts, and draft constructive review comments.",
+                    "arguments": [
+                        { "name": "request_number", "description": "Change request number (e.g. 14)", "required": true }
+                    ]
+                },
+                {
+                    "name": "summarize_document_diff",
+                    "description": "Structured prompt template to compare revisions across branches and draft concise release notes.",
+                    "arguments": [
+                        { "name": "file", "description": "File name or UUID", "required": true },
+                        { "name": "from", "description": "Starting revision number", "required": false },
+                        { "name": "to", "description": "Ending revision number", "required": false }
+                    ]
+                }
+            ]
+        })
+    }
+
+    async fn get_prompt(&self, params: Value) -> Result<Value, Failure> {
+        let Value::Object(params) = params else {
+            return Err(failure(rpc::INVALID_PARAMS, "params must be an object"));
+        };
+        let name = params
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| failure(rpc::INVALID_PARAMS, "name is required"))?;
+        let args = params.get("arguments").and_then(Value::as_object);
+
+        let (description, text) = match name {
+            "audit_document_history" => {
+                let file = args.and_then(|a| a.get("file")).and_then(Value::as_str).unwrap_or("<file>");
+                let branch = args.and_then(|a| a.get("branch")).and_then(Value::as_str).unwrap_or("main");
+                (
+                    "Inspect tamper-evident SHA-256 event chains, author signatures, and commit records.",
+                    format!(
+                        "Perform a comprehensive audit of the event history and hash chain for document '{file}' on branch '{branch}'.\n\
+                         1. Call `outline` or `read` to inspect document structure and verified state.\n\
+                         2. Inspect the sequence, author signatures, and chain hash continuity.\n\
+                         3. Report any gaps or verify that the chain hash tip matches the settled revisions."
+                    )
+                )
+            }
+            "review_change_request" => {
+                let req_num = args.and_then(|a| a.get("request_number")).and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(1);
+                (
+                    "Guided review prompt template to analyze a change request diff and check conflicts.",
+                    format!(
+                        "Analyze change request #{req_num}.\n\
+                         1. Inspect the change request summary and review state.\n\
+                         2. Call `diff` to inspect structural paragraph and cell changes.\n\
+                         3. Check for conflicting blocks or rules violations.\n\
+                         4. Keep comments concise, specific, and kind. Note: agents propose changes or comments; human reviewers approve and merge."
+                    )
+                )
+            }
+            "summarize_document_diff" => {
+                let file = args.and_then(|a| a.get("file")).and_then(Value::as_str).unwrap_or("<file>");
+                let from = args.and_then(|a| a.get("from")).and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
+                let to = args.and_then(|a| a.get("to")).and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
+                (
+                    "Structured prompt template to compare revisions across branches.",
+                    format!(
+                        "Summarize the changes in '{file}' between revisions {from} and {to}.\n\
+                         1. Call `diff` to compute paragraph, cell, and slide differences.\n\
+                         2. Provide an executive summary of key modifications.\n\
+                         3. Group changes by document headings or sheet sections."
+                    )
+                )
+            }
+            _ => return Err(failure(rpc::INVALID_PARAMS, "Unknown prompt")),
+        };
+
+        Ok(json!({
+            "description": description,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": {
+                        "type": "text",
+                        "text": text
+                    }
+                }
+            ]
+        }))
     }
 }
 
