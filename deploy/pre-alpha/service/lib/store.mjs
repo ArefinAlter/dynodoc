@@ -30,6 +30,11 @@ export function open(path) {
       error TEXT
     );
     CREATE INDEX IF NOT EXISTS sandbox_status ON sandbox(status);
+    CREATE TABLE IF NOT EXISTS sandbox_retirement_attempt (
+      sandbox_id TEXT PRIMARY KEY,
+      attempted_at INTEGER NOT NULL,
+      sequence INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS client_state (
       identity_id TEXT NOT NULL,
       key TEXT NOT NULL,

@@ -55,10 +55,10 @@ export async function build(db, api, auth) {
     const link = await auth.magicLink(v.email, v.name);
     db.prepare("UPDATE sandbox SET status = 'ready', ready_at = ?, token = ?, token_at = ?, resources = ? WHERE id = ?").run(Date.now(), link.magic_link_token, Date.now(), JSON.stringify(res), v.id);
     log('sandbox ready', { sandbox: v.id, ms: Date.now() - now });
-  } catch (e) {
+  } catch {
     failedAt = Date.now();
-    db.prepare("UPDATE sandbox SET status = 'failed', error = ?, resources = ? WHERE id = ?").run(String(e.message).slice(0, 300), JSON.stringify(res), v.id);
-    log('sandbox failed', { sandbox: v.id, error: String(e.message).slice(0, 300) });
+    db.prepare("UPDATE sandbox SET status = 'failed', error = ?, resources = ? WHERE id = ?").run('Sandbox provisioning failed', JSON.stringify(res), v.id);
+    log('sandbox failed', { sandbox: v.id });
   } finally {
     if (visitorTokens) await auth.logout(visitorTokens.refresh_token);
   }
@@ -69,41 +69,83 @@ export async function build(db, api, auth) {
 export async function retire(db, api, auth, row) {
   const res = JSON.parse(row.resources || '{}');
   const tokenOf = (who) => auth.token(PEOPLE[who].email, PEOPLE[who].name);
+  let retirementFailed = false;
   for (const d of res.documents ?? []) {
     try {
       await api.post(`/documents/${d.id}/trash`, { deleted: true }, await tokenOf(d.owner));
-    } catch (e) {
-      log('trash failed', { sandbox: row.id, error: String(e.message).slice(0, 200) });
+    } catch {
+      retirementFailed = true;
+      log('trash failed', { sandbox: row.id });
     }
   }
   for (const s of [...(res.projects ?? []), ...(res.spaces ?? [])]) {
     try {
       await api.post(`/spaces/${s.id}/members`, { email: row.email, role: 'remove' }, await tokenOf(s.owner));
-    } catch {
-      /* the visitor may never have been added */
+    } catch (error) {
+      // A missing space is already inaccessible; every other failure needs retry.
+      if (error?.status !== 404) {
+        retirementFailed = true;
+        log('membership removal failed', { sandbox: row.id });
+      }
     }
   }
-  if (row.identity_id) dropState(db, row.identity_id);
-  db.prepare("UPDATE sandbox SET status = 'expired', expired_at = ?, token = NULL WHERE id = ?").run(Date.now(), row.id);
+  // Leave the row eligible for another tick after any incomplete retirement.
+  if (retirementFailed) throw new Error('sandbox retirement incomplete');
+  // Keep the local state change atomic; preserve resources for a future verified erasure.
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const d of res.documents ?? []) db.prepare('DELETE FROM note WHERE document_id = ?').run(d.id);
+    if (row.identity_id) dropState(db, row.identity_id);
+    db.prepare("UPDATE sandbox SET status = 'expired', expired_at = ?, token = NULL WHERE id = ?").run(Date.now(), row.id);
+    db.prepare('DELETE FROM sandbox_retirement_attempt WHERE sandbox_id = ?').run(row.id);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
   log('sandbox retired', { sandbox: row.id });
+}
+
+/** Reserve a fair bounded batch; an interrupted worker can retry after the cooldown. */
+export async function retireDue(db, api, auth, now = Date.now()) {
+  let due;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    due = db.prepare(`
+      SELECT s.* FROM sandbox s
+      LEFT JOIN sandbox_retirement_attempt a ON a.sandbox_id = s.id
+      WHERE ((s.status = 'claimed' AND s.expires_at <= ?)
+          OR s.status = 'failed'
+          OR (s.status = 'ready' AND s.created_at <= ?)
+          OR (s.status = 'building' AND s.created_at <= ?))
+        AND (a.attempted_at IS NULL OR a.attempted_at <= ?)
+      ORDER BY COALESCE(a.sequence, 0), s.created_at, s.id LIMIT 5
+    `).all(now, now - 24 * 3_600_000, now - 600_000, now - 30_000);
+    let sequence = db.prepare('SELECT COALESCE(MAX(sequence), 0) AS n FROM sandbox_retirement_attempt').get().n;
+    const reserve = db.prepare(`INSERT INTO sandbox_retirement_attempt (sandbox_id, attempted_at, sequence)
+      VALUES (?, ?, ?) ON CONFLICT(sandbox_id) DO UPDATE SET attempted_at=excluded.attempted_at, sequence=excluded.sequence`);
+    for (const row of due) reserve.run(row.id, now, ++sequence);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  for (const row of due) {
+    try { await retire(db, api, auth, row); }
+    catch { log('sandbox retirement will retry', { sandbox: row.id }); }
+  }
 }
 
 export async function tick(db, api, auth) {
   const now = Date.now();
-  // Retire claimed sandboxes past their time, failed ones, and ready ones nobody took in a week.
-  const due = db
-    .prepare("SELECT * FROM sandbox WHERE (status = 'claimed' AND expires_at < ?) OR status = 'failed' OR (status = 'ready' AND created_at < ?) LIMIT 5")
-    .all(now, now - 7 * 86_400_000);
-  for (const row of due) await retire(db, api, auth, row);
-  // A building row older than ten minutes was interrupted (a restart): retire what it made.
-  for (const row of db.prepare("SELECT * FROM sandbox WHERE status = 'building' AND created_at < ?").all(now - 600_000)) await retire(db, api, auth, row);
+  await retireDue(db, api, auth, now);
   // Keep the sign-in tokens of ready sandboxes fresh.
   for (const row of db.prepare("SELECT * FROM sandbox WHERE status = 'ready' AND token_at < ?").all(now - TOKEN_FRESH_MS)) {
     try {
       const link = await auth.magicLink(row.email, row.display_name);
       db.prepare('UPDATE sandbox SET token = ?, token_at = ? WHERE id = ?').run(link.magic_link_token, Date.now(), row.id);
-    } catch (e) {
-      log('token refresh failed', { sandbox: row.id, error: String(e.message).slice(0, 200) });
+    } catch {
+      log('token refresh failed', { sandbox: row.id });
     }
   }
   const ready = db.prepare("SELECT COUNT(*) AS n FROM sandbox WHERE status = 'ready'").get().n;
@@ -120,8 +162,8 @@ async function main() {
   for (;;) {
     try {
       await tick(db, api, auth);
-    } catch (e) {
-      log('tick failed', { error: String(e.message).slice(0, 300) });
+    } catch {
+      log('tick failed');
     }
     const ready = db.prepare("SELECT COUNT(*) AS n FROM sandbox WHERE status = 'ready'").get().n;
     await new Promise((r) => setTimeout(r, ready < CONFIG.pool ? 1000 : CONFIG.tickMs));

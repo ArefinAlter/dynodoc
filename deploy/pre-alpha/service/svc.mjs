@@ -86,7 +86,7 @@ button{font:inherit;background:var(--brand);color:#fff;border:0;border-radius:8p
 const VISITOR_PAGE = (hours) =>
   PAGE(`<span class="pill">Pre-alpha release</span><h1>Try Dynodoc with a sample workspace</h1>
 <p>You get your own copy of a sample organisation: a team handbook, a budget, a review deck, a field guide and a grant application, with their history, drafts and change requests from six invented colleagues.</p>
-<ul><li>It is yours alone, and it is removed ${hours} hours after you start.</li><li>Nothing is emailed; the addresses are sample ones.</li><li>Do not put anything private or confidential in it.</li></ul>
+<ul><li>It is yours alone; access expires ${hours} hours after you start. Sample content is placed in trash during cleanup.</li><li>Nothing is emailed; the addresses are sample ones.</li><li>Do not put anything private or confidential in it.</li></ul>
 <form method="post" action="/svc/visitor/start"><button type="submit">Start the sample workspace</button></form>
 <p><a href="/login">Sign in with your own account</a> instead.</p>`);
 
@@ -94,6 +94,8 @@ const BUSY_PAGE = PAGE('<h1>No sample workspace is free right now</h1><p>New one
 
 export function makeHandler({ db, api, cfg, now = () => Date.now() }) {
   const key = sessionKey(cfg.sessionSecret);
+  const requestedHours = Number(cfg.sandboxHours);
+  const sandboxHours = Number.isFinite(requestedHours) && requestedHours > 0 ? Math.min(requestedHours, 24) : 24;
   const identities = new Map(); // token hash -> { identity, until }
   const access = new Map(); // identity:document -> until
 
@@ -130,9 +132,9 @@ export function makeHandler({ db, api, cfg, now = () => Date.now() }) {
   function claim(ip) {
     if (!allow(db, `claim:${hash(ip)}`, 6, 3_600_000, now()) || !allow(db, 'claim:all', 240, 3_600_000, now())) return { limited: true };
     const fresh = now() - 13 * 60_000;
-    const row = db.prepare("SELECT * FROM sandbox WHERE status = 'ready' AND token IS NOT NULL AND token_at > ? ORDER BY ready_at LIMIT 1").get(fresh);
+    const row = db.prepare("SELECT * FROM sandbox WHERE status = 'ready' AND token IS NOT NULL AND token_at > ? AND created_at > ? ORDER BY ready_at LIMIT 1").get(fresh, now() - 24 * 3_600_000);
     if (!row) return { busy: true };
-    const expires = now() + cfg.sandboxHours * 3_600_000;
+    const expires = now() + sandboxHours * 3_600_000;
     const changed = db.prepare("UPDATE sandbox SET status = 'claimed', claimed_at = ?, expires_at = ?, token = NULL WHERE id = ? AND status = 'ready'").run(now(), expires, row.id);
     if (!changed.changes) return { busy: true };
     return { token: row.token, email: row.email, display_name: row.display_name, expires_at: new Date(expires).toISOString() };
@@ -150,7 +152,7 @@ export function makeHandler({ db, api, cfg, now = () => Date.now() }) {
     const path = url.pathname;
     try {
       if (req.method === 'GET' && path === '/svc/healthz') return send(res, 200, { ok: true });
-      if (req.method === 'GET' && path === '/svc/visitor') return send(res, 200, VISITOR_PAGE(cfg.sandboxHours));
+      if (req.method === 'GET' && path === '/svc/visitor') return send(res, 200, VISITOR_PAGE(sandboxHours));
       if (req.method === 'POST' && path === '/svc/visitor/start') {
         if (!sameOrigin(req)) return send(res, 403, PAGE('<h1>Please start from the Try page</h1><p><a href="/svc/visitor">Try Dynodoc</a></p>'));
         await readBody(req);
@@ -215,7 +217,7 @@ export function makeHandler({ db, api, cfg, now = () => Date.now() }) {
       return send(res, 404, { error: 'Not found' });
     } catch (e) {
       const status = e.status && e.status >= 400 && e.status < 500 ? e.status : e instanceof SyntaxError ? 400 : 500;
-      if (status === 500) console.error(JSON.stringify({ at: new Date().toISOString(), msg: 'request failed', path, error: String(e.message).slice(0, 200) }));
+      if (status === 500) console.error(JSON.stringify({ at: new Date().toISOString(), msg: 'request failed' }));
       return send(res, status, { error: status === 500 ? 'Something went wrong.' : e.message });
     }
   };

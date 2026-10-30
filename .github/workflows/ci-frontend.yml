@@ -2,6 +2,7 @@ name: ci-frontend
 
 on:
   push:
+    branches: [main]
     paths:
       - "frontend/**"
       - "extensions/**"
@@ -14,17 +15,9 @@ on:
       - "infra/demo/nginx-admin.conf"
       - ".github/workflows/ci-frontend.yml"
   pull_request:
-    paths:
-      - "frontend/**"
-      - "extensions/**"
-      - "crates/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "migrations/**"
-      - "infra/demo/nginx-app.conf"
-      - "infra/demo/nginx-admin.conf"
-      - ".github/workflows/ci-frontend.yml"
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-frontend-${{ github.ref }}
@@ -36,6 +29,7 @@ defaults:
 
 jobs:
   build-test:
+    name: Frontend build and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

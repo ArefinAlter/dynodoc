@@ -2690,3 +2690,19 @@ MIT, expressly authorized by the copyright owner. It includes independent builds
 tests and community conventions. The application remains AGPL and retains its
 compatible engine copy; [dependency-boundary migration](ENGINE-EXTRACTION.md) remains
 open. See [verification and exact limits](EDITABLE-OFFICE-RELEASE.md).
+
+## Security remediation branch, 30 October 2026
+
+This branch adds credential-store ignore rules across the suite. The paired Dynodoc branch also retries incomplete demo-document trash and membership-removal operations without logging upstream errors. The demo still uses soft trash and does not guarantee permanent erasure after 24 hours; permanent erasure and production deployment remain outstanding. The Node provisioner/service suite passed 13 tests locally. No production changes were made. Source commits and later checks should be recorded when reviewed.
+
+The paired Dynodoc Engine security branch now gates its deterministic test key provider behind an explicit test-support feature and redacts test assertion diagnostics. Isolated Rust CI is pending.
+
+The paired Dynodoc branch adds an explicit Rust 1.85 MSRV CI check; results are pending. Dynodoc Engine declares and pins Rust 1.96 for its own CI.
+
+The paired Dynodoc security branch also removes raw upstream errors from demo provisioning, token-refresh, tick and unexpected-request logs; focused redaction tests are included.
+
+The paired Dynodoc security branch adds a durable, bounded and fair retirement queue with retry cooldown, expires unused ready sandboxes after 24 hours, caps claimed access at 24 hours, and removes local demo notes on successful retirement. Thirteen focused service tests pass. Documents remain in soft trash; permanent erasure and backup retention are not yet implemented.
+
+The paired security branches make Dynodoc MCP read-only unless a trusted per-request human confirmation sink is supplied. The stock CLI refuses write mode until such a user-facing confirmation surface is implemented. Security regressions are pending CI.
+
+The paired Dynodoc branch gives Rust and frontend CI distinct check names and runs both on every pull request so required branch checks cannot remain permanently pending due to path filters. Rust 1.89 candidate MSRV checks are running; no supported-version change has been made yet.
