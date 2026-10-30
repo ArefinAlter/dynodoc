@@ -164,3 +164,40 @@ test('a same-origin form posted under no-referrer (Origin: null) is accepted; a 
   const bare = await call(handler, 'POST', '/svc/visitor/start', { headers: { origin: 'null' }, body: '' });
   assert.equal(bare.status, 403);
 });
+
+
+test('failed retirement stays eligible for retry without logging the upstream error', async () => {
+  const { retire } = await import('../service/provisioner.mjs');
+  const db = open(':memory:');
+  const now = Date.now();
+  db.prepare("INSERT INTO sandbox (id, email, display_name, status, created_at, expires_at, resources) VALUES ('retry', 'v@x.invalid', 'V', 'claimed', ?, ?, ?)")
+    .run(now - 90000000, now - 1000, JSON.stringify({ documents: [{ id: 'doc-1', owner: 'alex' }] }));
+  const row = db.prepare("SELECT * FROM sandbox WHERE id='retry'").get();
+  const api = { async post() { throw new Error('sensitive-canary'); } };
+  const auth = { async token() { return 'test'; } };
+  const lines = [];
+  const original = console.log;
+  console.log = (...args) => lines.push(args.join(' '));
+  try {
+    await assert.rejects(retire(db, api, auth, row), /retirement incomplete/);
+    assert.equal(db.prepare("SELECT status FROM sandbox WHERE id='retry'").get().status, 'claimed');
+    assert.ok(!lines.join(' ').includes('sensitive-canary'));
+  } finally { console.log = original; db.close(); }
+});
+
+
+test('failed membership removal is retried; a missing space is already retired', async () => {
+  const { retire } = await import('../service/provisioner.mjs');
+  const db = open(':memory:');
+  const now = Date.now();
+  db.prepare("INSERT INTO sandbox (id, email, display_name, status, created_at, expires_at, resources) VALUES ('member-retry', 'v@x.invalid', 'V', 'claimed', ?, ?, ?)")
+    .run(now - 90000000, now - 1000, JSON.stringify({ spaces: [{ id: 'space-1', owner: 'alex' }] }));
+  const row = db.prepare("SELECT * FROM sandbox WHERE id='member-retry'").get();
+  const auth = { async token() { return 'test'; } };
+  try {
+    await assert.rejects(retire(db, { async post() { throw new Error('private'); } }, auth, row), /retirement incomplete/);
+    assert.equal(db.prepare("SELECT status FROM sandbox WHERE id='member-retry'").get().status, 'claimed');
+    await retire(db, { async post() { throw Object.assign(new Error('missing'), { status: 404 }); } }, auth, row);
+    assert.equal(db.prepare("SELECT status FROM sandbox WHERE id='member-retry'").get().status, 'expired');
+  } finally { db.close(); }
+});

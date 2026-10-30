@@ -69,20 +69,28 @@ export async function build(db, api, auth) {
 export async function retire(db, api, auth, row) {
   const res = JSON.parse(row.resources || '{}');
   const tokenOf = (who) => auth.token(PEOPLE[who].email, PEOPLE[who].name);
+  let retirementFailed = false;
   for (const d of res.documents ?? []) {
     try {
       await api.post(`/documents/${d.id}/trash`, { deleted: true }, await tokenOf(d.owner));
-    } catch (e) {
-      log('trash failed', { sandbox: row.id, error: String(e.message).slice(0, 200) });
+    } catch {
+      retirementFailed = true;
+      log('trash failed', { sandbox: row.id });
     }
   }
   for (const s of [...(res.projects ?? []), ...(res.spaces ?? [])]) {
     try {
       await api.post(`/spaces/${s.id}/members`, { email: row.email, role: 'remove' }, await tokenOf(s.owner));
-    } catch {
-      /* the visitor may never have been added */
+    } catch (error) {
+      // A missing space is already inaccessible; every other failure needs retry.
+      if (error?.status !== 404) {
+        retirementFailed = true;
+        log('membership removal failed', { sandbox: row.id });
+      }
     }
   }
+  // Leave the row eligible for another tick after any incomplete retirement.
+  if (retirementFailed) throw new Error('sandbox retirement incomplete');
   if (row.identity_id) dropState(db, row.identity_id);
   db.prepare("UPDATE sandbox SET status = 'expired', expired_at = ?, token = NULL WHERE id = ?").run(Date.now(), row.id);
   log('sandbox retired', { sandbox: row.id });
@@ -94,9 +102,15 @@ export async function tick(db, api, auth) {
   const due = db
     .prepare("SELECT * FROM sandbox WHERE (status = 'claimed' AND expires_at < ?) OR status = 'failed' OR (status = 'ready' AND created_at < ?) LIMIT 5")
     .all(now, now - 7 * 86_400_000);
-  for (const row of due) await retire(db, api, auth, row);
+  for (const row of due) {
+    try { await retire(db, api, auth, row); }
+    catch { log('sandbox retirement will retry', { sandbox: row.id }); }
+  }
   // A building row older than ten minutes was interrupted (a restart): retire what it made.
-  for (const row of db.prepare("SELECT * FROM sandbox WHERE status = 'building' AND created_at < ?").all(now - 600_000)) await retire(db, api, auth, row);
+  for (const row of db.prepare("SELECT * FROM sandbox WHERE status = 'building' AND created_at < ?").all(now - 600_000)) {
+    try { await retire(db, api, auth, row); }
+    catch { log('sandbox retirement will retry', { sandbox: row.id }); }
+  }
   // Keep the sign-in tokens of ready sandboxes fresh.
   for (const row of db.prepare("SELECT * FROM sandbox WHERE status = 'ready' AND token_at < ?").all(now - TOKEN_FRESH_MS)) {
     try {

@@ -3048,3 +3048,7 @@ Implementation is pushed to both main branches:
 All listed runs passed. The documentation follow-up records results and synchronization
 without changing the verified implementation. There are no remaining part-1 test
 failures; the larger unfinished product capabilities are explicitly listed above.
+
+## Security remediation branch, 30 October 2026
+
+This branch adds credential-store ignore rules across the suite. The paired Dynodoc branch also retries incomplete demo-document trash and membership-removal operations without logging upstream errors. The demo still uses soft trash and does not guarantee permanent erasure after 24 hours; fair retry scheduling and production deployment remain outstanding. The Node provisioner/service suite passed 9 tests locally. No production changes were made. Source commits and later checks should be recorded when reviewed.
