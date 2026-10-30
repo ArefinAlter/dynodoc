@@ -2,6 +2,7 @@ name: ci-frontend
 
 on:
   push:
+    branches: [main]
     paths:
       - "frontend/**"
       - "extensions/**"

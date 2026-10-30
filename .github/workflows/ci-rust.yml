@@ -2,6 +2,7 @@ name: ci-rust
 
 on:
   push:
+    branches: [main]
     paths:
       - "crates/**"
       - "Cargo.toml"
