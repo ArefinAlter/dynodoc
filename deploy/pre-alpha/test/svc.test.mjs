@@ -232,3 +232,42 @@ test('unexpected request failures do not log the request path or error text', as
     assert.ok(!lines.join(' ').includes('/svc/visitor/start'));
   } finally { console.error = original; }
 });
+
+
+test('cleanup retries fairly, removes demo notes, and does not starve later expired sandboxes', async () => {
+  const { retireDue } = await import('../service/provisioner.mjs');
+  const db = open(':memory:');
+  const now = Date.now();
+  const insert = db.prepare("INSERT INTO sandbox (id,email,display_name,status,created_at,expires_at,resources) VALUES (?,?,?,'claimed',?,?,?)");
+  for (let i = 0; i < 6; i++) insert.run(`s${i}`, `v${i}@x.invalid`, 'V', now - 90_000_000, now - 1000, JSON.stringify({ documents: [{ id: `doc-${i}`, owner: 'alex' }] }));
+  db.prepare("INSERT INTO note (document_id,branch,from_seq,to_seq,kind,summary,author_id,created_at) VALUES ('doc-5','main',0,1,'commit','sample','visitor',?)").run(now);
+  const api = { async post(path) { if (!path.includes('doc-5')) throw new Error('sensitive-canary'); } };
+  const auth = { async token() { return 'test'; } };
+  try {
+    await retireDue(db, api, auth, now);
+    assert.equal(db.prepare("SELECT status FROM sandbox WHERE id='s5'").get().status, 'claimed');
+    await retireDue(db, api, auth, now + 1);
+    assert.equal(db.prepare("SELECT status FROM sandbox WHERE id='s5'").get().status, 'expired');
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM note WHERE document_id='doc-5'").get().n, 0);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sandbox WHERE status='claimed'").get().n, 5);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM sandbox_retirement_attempt').get().n, 5);
+  } finally { db.close(); }
+});
+
+test('visitor claims exclude stale ready sandboxes and never exceed 24 hours', async () => {
+  const db = open(':memory:');
+  const now = Date.now();
+  const cfg = { origin: ORIGIN, sessionSecret: SECRET, sandboxHours: 36 };
+  const handler = makeHandler({ db, api: fakeApi(), cfg, now: () => now });
+  const insert = db.prepare("INSERT INTO sandbox (id,email,display_name,status,created_at,ready_at,token,token_at) VALUES (?,?,?,'ready',?,?,?,?)");
+  insert.run('old','old@x.invalid','Old', now - 25 * 3_600_000, now - 1000, 'old-token', now);
+  try {
+    const unavailable = await call(handler, 'POST', '/svc/v1/visitor', { headers: { origin: ORIGIN }, body: '{}' });
+    assert.equal(unavailable.status, 503);
+    insert.run('new','new@x.invalid','New', now - 1000, now - 500, 'new-token', now);
+    const result = await call(handler, 'POST', '/svc/v1/visitor', { headers: { origin: ORIGIN }, body: '{}' });
+    assert.equal(result.status, 200);
+    assert.equal(result.json.token, 'new-token');
+    assert.equal(Date.parse(result.json.expires_at), now + 24 * 3_600_000);
+  } finally { db.close(); }
+});

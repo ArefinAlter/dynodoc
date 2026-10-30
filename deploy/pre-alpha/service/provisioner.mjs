@@ -91,26 +91,54 @@ export async function retire(db, api, auth, row) {
   }
   // Leave the row eligible for another tick after any incomplete retirement.
   if (retirementFailed) throw new Error('sandbox retirement incomplete');
-  if (row.identity_id) dropState(db, row.identity_id);
-  db.prepare("UPDATE sandbox SET status = 'expired', expired_at = ?, token = NULL WHERE id = ?").run(Date.now(), row.id);
+  // Keep the local state change atomic; preserve resources for a future verified erasure.
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const d of res.documents ?? []) db.prepare('DELETE FROM note WHERE document_id = ?').run(d.id);
+    if (row.identity_id) dropState(db, row.identity_id);
+    db.prepare("UPDATE sandbox SET status = 'expired', expired_at = ?, token = NULL WHERE id = ?").run(Date.now(), row.id);
+    db.prepare('DELETE FROM sandbox_retirement_attempt WHERE sandbox_id = ?').run(row.id);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
   log('sandbox retired', { sandbox: row.id });
 }
 
-export async function tick(db, api, auth) {
-  const now = Date.now();
-  // Retire claimed sandboxes past their time, failed ones, and ready ones nobody took in a week.
-  const due = db
-    .prepare("SELECT * FROM sandbox WHERE (status = 'claimed' AND expires_at < ?) OR status = 'failed' OR (status = 'ready' AND created_at < ?) LIMIT 5")
-    .all(now, now - 7 * 86_400_000);
+/** Reserve a fair bounded batch; an interrupted worker can retry after the cooldown. */
+export async function retireDue(db, api, auth, now = Date.now()) {
+  let due;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    due = db.prepare(`
+      SELECT s.* FROM sandbox s
+      LEFT JOIN sandbox_retirement_attempt a ON a.sandbox_id = s.id
+      WHERE ((s.status = 'claimed' AND s.expires_at <= ?)
+          OR s.status = 'failed'
+          OR (s.status = 'ready' AND s.created_at <= ?)
+          OR (s.status = 'building' AND s.created_at <= ?))
+        AND (a.attempted_at IS NULL OR a.attempted_at <= ?)
+      ORDER BY COALESCE(a.sequence, 0), s.created_at, s.id LIMIT 5
+    `).all(now, now - 24 * 3_600_000, now - 600_000, now - 30_000);
+    let sequence = db.prepare('SELECT COALESCE(MAX(sequence), 0) AS n FROM sandbox_retirement_attempt').get().n;
+    const reserve = db.prepare(`INSERT INTO sandbox_retirement_attempt (sandbox_id, attempted_at, sequence)
+      VALUES (?, ?, ?) ON CONFLICT(sandbox_id) DO UPDATE SET attempted_at=excluded.attempted_at, sequence=excluded.sequence`);
+    for (const row of due) reserve.run(row.id, now, ++sequence);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
   for (const row of due) {
     try { await retire(db, api, auth, row); }
     catch { log('sandbox retirement will retry', { sandbox: row.id }); }
   }
-  // A building row older than ten minutes was interrupted (a restart): retire what it made.
-  for (const row of db.prepare("SELECT * FROM sandbox WHERE status = 'building' AND created_at < ?").all(now - 600_000)) {
-    try { await retire(db, api, auth, row); }
-    catch { log('sandbox retirement will retry', { sandbox: row.id }); }
-  }
+}
+
+export async function tick(db, api, auth) {
+  const now = Date.now();
+  await retireDue(db, api, auth, now);
   // Keep the sign-in tokens of ready sandboxes fresh.
   for (const row of db.prepare("SELECT * FROM sandbox WHERE status = 'ready' AND token_at < ?").all(now - TOKEN_FRESH_MS)) {
     try {
