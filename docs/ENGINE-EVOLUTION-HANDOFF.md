@@ -3054,3 +3054,5 @@ failures; the larger unfinished product capabilities are explicitly listed above
 This branch adds credential-store ignore rules across the suite. The paired Dynodoc branch also retries incomplete demo-document trash and membership-removal operations without logging upstream errors. The demo still uses soft trash and does not guarantee permanent erasure after 24 hours; fair retry scheduling and production deployment remain outstanding. The Node provisioner/service suite passed 9 tests locally. No production changes were made. Source commits and later checks should be recorded when reviewed.
 
 The paired Dynodoc Engine security branch now gates its deterministic test key provider behind an explicit test-support feature and redacts test assertion diagnostics. Isolated Rust CI is pending.
+
+The paired Dynodoc branch adds an explicit Rust 1.85 MSRV CI check; results are pending. Dynodoc Engine declares and pins Rust 1.96 for its own CI.
