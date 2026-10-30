@@ -55,10 +55,10 @@ export async function build(db, api, auth) {
     const link = await auth.magicLink(v.email, v.name);
     db.prepare("UPDATE sandbox SET status = 'ready', ready_at = ?, token = ?, token_at = ?, resources = ? WHERE id = ?").run(Date.now(), link.magic_link_token, Date.now(), JSON.stringify(res), v.id);
     log('sandbox ready', { sandbox: v.id, ms: Date.now() - now });
-  } catch (e) {
+  } catch {
     failedAt = Date.now();
-    db.prepare("UPDATE sandbox SET status = 'failed', error = ?, resources = ? WHERE id = ?").run(String(e.message).slice(0, 300), JSON.stringify(res), v.id);
-    log('sandbox failed', { sandbox: v.id, error: String(e.message).slice(0, 300) });
+    db.prepare("UPDATE sandbox SET status = 'failed', error = ?, resources = ? WHERE id = ?").run('Sandbox provisioning failed', JSON.stringify(res), v.id);
+    log('sandbox failed', { sandbox: v.id });
   } finally {
     if (visitorTokens) await auth.logout(visitorTokens.refresh_token);
   }
@@ -116,8 +116,8 @@ export async function tick(db, api, auth) {
     try {
       const link = await auth.magicLink(row.email, row.display_name);
       db.prepare('UPDATE sandbox SET token = ?, token_at = ? WHERE id = ?').run(link.magic_link_token, Date.now(), row.id);
-    } catch (e) {
-      log('token refresh failed', { sandbox: row.id, error: String(e.message).slice(0, 200) });
+    } catch {
+      log('token refresh failed', { sandbox: row.id });
     }
   }
   const ready = db.prepare("SELECT COUNT(*) AS n FROM sandbox WHERE status = 'ready'").get().n;
@@ -134,8 +134,8 @@ async function main() {
   for (;;) {
     try {
       await tick(db, api, auth);
-    } catch (e) {
-      log('tick failed', { error: String(e.message).slice(0, 300) });
+    } catch {
+      log('tick failed');
     }
     const ready = db.prepare("SELECT COUNT(*) AS n FROM sandbox WHERE status = 'ready'").get().n;
     await new Promise((r) => setTimeout(r, ready < CONFIG.pool ? 1000 : CONFIG.tickMs));

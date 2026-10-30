@@ -215,7 +215,7 @@ export function makeHandler({ db, api, cfg, now = () => Date.now() }) {
       return send(res, 404, { error: 'Not found' });
     } catch (e) {
       const status = e.status && e.status >= 400 && e.status < 500 ? e.status : e instanceof SyntaxError ? 400 : 500;
-      if (status === 500) console.error(JSON.stringify({ at: new Date().toISOString(), msg: 'request failed', path, error: String(e.message).slice(0, 200) }));
+      if (status === 500) console.error(JSON.stringify({ at: new Date().toISOString(), msg: 'request failed' }));
       return send(res, status, { error: status === 500 ? 'Something went wrong.' : e.message });
     }
   };

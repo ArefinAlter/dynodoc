@@ -201,3 +201,34 @@ test('failed membership removal is retried; a missing space is already retired',
     assert.equal(db.prepare("SELECT status FROM sandbox WHERE id='member-retry'").get().status, 'expired');
   } finally { db.close(); }
 });
+
+
+test('provisioning failures do not store or log upstream error content', async () => {
+  const { build } = await import('../service/provisioner.mjs');
+  const db = open(':memory:');
+  const auth = { async once() { throw new Error('private-upstream-canary'); } };
+  const lines = [];
+  const original = console.log;
+  console.log = (...args) => lines.push(args.join(' '));
+  try {
+    await build(db, {}, auth);
+    const row = db.prepare('SELECT status, error FROM sandbox').get();
+    assert.equal(row.status, 'failed');
+    assert.equal(row.error, 'Sandbox provisioning failed');
+    assert.ok(!lines.join(' ').includes('private-upstream-canary'));
+  } finally { console.log = original; db.close(); }
+});
+
+test('unexpected request failures do not log the request path or error text', async () => {
+  const db = { prepare() { throw new Error('private-upstream-canary'); } };
+  const handler = makeHandler({ db, api: {}, cfg: { origin: ORIGIN, sessionSecret: SECRET, sandboxHours: 24 } });
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => lines.push(args.join(' '));
+  try {
+    const response = await call(handler, 'POST', '/svc/visitor/start', { headers: { origin: ORIGIN }, body: '' });
+    assert.equal(response.status, 500);
+    assert.ok(!lines.join(' ').includes('private-upstream-canary'));
+    assert.ok(!lines.join(' ').includes('/svc/visitor/start'));
+  } finally { console.error = original; }
+});
