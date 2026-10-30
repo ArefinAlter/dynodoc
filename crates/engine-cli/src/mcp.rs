@@ -113,6 +113,8 @@ fn read_capped(path: &Path, cap: usize) -> anyhow::Result<Vec<u8>> {
 }
 
 pub async fn run(options: Options) -> anyhow::Result<()> {
+    let write = options.write || write_from_environment();
+    ensure!(!write, "MCP write tools require a trusted per-request human confirmation surface; this CLI currently supports read-only access");
     let remote: Remote = serde_json::from_slice(
         &read_capped(&options.remote, 8192).context("cannot read the --remote file")?,
     )
@@ -125,7 +127,6 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
     // Before anything is served: a wrong path or passphrase should stop the launch with a
     // message on stderr, not surface as a tool error on every call.
     let key = crate::signing::load(&options.device_key)?;
-    let write = options.write || write_from_environment();
     let owned = |scopes: &[&str]| scopes.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
     let mut session = DeviceSession::new(
         base.clone(),

@@ -16,7 +16,7 @@
 //! * `tools/list` is deterministic (same bytes every time). When the request (or the
 //!   negotiated revision) is 2026-07-28 or later it carries `ttlMs` and `cacheScope`.
 //! * `tools/call` validates the arguments against the published schema. An unknown tool, or a
-//!   tool the connection's profile does not offer (the write tools unless `--write` was given), is a
+//!   tool the connection's profile does not offer is a
 //!   JSON-RPC error `-32602`; invalid arguments and every backend failure are a normal
 //!   result with `isError: true` and a `dd/1 error` line (spec 7.1, and the 2025-11-25
 //!   clarification that argument errors are tool errors so a model can correct itself).
@@ -38,7 +38,10 @@
 //! `io.modelcontextprotocol/protocolVersion` and the allowed values of `cacheScope` are
 //! therefore unverified: check at build time. They are isolated in the constants below.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
@@ -74,9 +77,22 @@ struct Connection {
     client: String,
 }
 
+/// A trusted host must show the exact tool and validated arguments to a person.
+/// The sink must also bind each decision to its backend project. The agent's own request
+/// or an untrusted MCP client must never implement this decision.
+/// The server asks again for each write and fails closed on denial or timeout.
+pub trait HumanConfirmation: Send + Sync {
+    fn confirm<'a>(
+        &'a self,
+        tool: Tool,
+        arguments: &'a Map<String, Value>,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>>;
+}
+
 struct Inner<B> {
     backend: B,
     profile: Profile,
+    confirmation: Option<Arc<dyn HumanConfirmation>>,
     connection: Mutex<Connection>,
 }
 
@@ -104,11 +120,30 @@ impl<B> Clone for Server<B> {
 }
 
 impl<B: Backend> Server<B> {
-    pub fn new(backend: B, profile: Profile) -> Self {
+    /// Without a trusted confirmation sink, the connection is always read-only.
+    pub fn new(backend: B, _profile: Profile) -> Self {
+        Self::build(backend, Profile::read_only(), None)
+    }
+
+    /// Only trusted hosts with a real human confirmation surface may expose writes.
+    pub fn with_human_confirmation(
+        backend: B,
+        profile: Profile,
+        confirmation: Arc<dyn HumanConfirmation>,
+    ) -> Self {
+        Self::build(backend, profile, Some(confirmation))
+    }
+
+    fn build(
+        backend: B,
+        profile: Profile,
+        confirmation: Option<Arc<dyn HumanConfirmation>>,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 backend,
                 profile,
+                confirmation,
                 connection: Mutex::new(Connection {
                     version: None,
                     client: String::new(),
@@ -299,6 +334,21 @@ impl<B: Backend> Server<B> {
         if let Err(error) = self.inner.profile.validate(tool, &args) {
             return Ok(tool_result(ToolOutput::error(&error)));
         }
+        if tool.is_write() {
+            let approved = match &self.inner.confirmation {
+                Some(sink) => {
+                    tokio::time::timeout(Duration::from_secs(120), sink.confirm(tool, &args))
+                        .await
+                        .unwrap_or(false)
+                }
+                None => false,
+            };
+            if !approved {
+                return Ok(tool_result(ToolOutput::error(&ToolError::new(
+                    "policy_denied",
+                ))));
+            }
+        }
         let ctx = CallContext {
             client: self.connection().client.clone(),
         };
@@ -472,8 +522,14 @@ impl<B: Backend> Server<B> {
 
         let (description, text) = match name {
             "audit_document_history" => {
-                let file = args.and_then(|a| a.get("file")).and_then(Value::as_str).unwrap_or("<file>");
-                let branch = args.and_then(|a| a.get("branch")).and_then(Value::as_str).unwrap_or("main");
+                let file = args
+                    .and_then(|a| a.get("file"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("<file>");
+                let branch = args
+                    .and_then(|a| a.get("branch"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("main");
                 (
                     "Inspect tamper-evident SHA-256 event chains, author signatures, and commit records.",
                     format!(
@@ -485,7 +541,13 @@ impl<B: Backend> Server<B> {
                 )
             }
             "review_change_request" => {
-                let req_num = args.and_then(|a| a.get("request_number")).and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(1);
+                let req_num = args
+                    .and_then(|a| a.get("request_number"))
+                    .and_then(|v| {
+                        v.as_i64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
+                    .unwrap_or(1);
                 (
                     "Guided review prompt template to analyze a change request diff and check conflicts.",
                     format!(
@@ -498,9 +560,24 @@ impl<B: Backend> Server<B> {
                 )
             }
             "summarize_document_diff" => {
-                let file = args.and_then(|a| a.get("file")).and_then(Value::as_str).unwrap_or("<file>");
-                let from = args.and_then(|a| a.get("from")).and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
-                let to = args.and_then(|a| a.get("to")).and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
+                let file = args
+                    .and_then(|a| a.get("file"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("<file>");
+                let from = args
+                    .and_then(|a| a.get("from"))
+                    .and_then(|v| {
+                        v.as_i64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
+                    .unwrap_or(0);
+                let to = args
+                    .and_then(|a| a.get("to"))
+                    .and_then(|v| {
+                        v.as_i64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
+                    .unwrap_or(0);
                 (
                     "Structured prompt template to compare revisions across branches.",
                     format!(
@@ -508,7 +585,7 @@ impl<B: Backend> Server<B> {
                          1. Call `diff` to compute paragraph, cell, and slide differences.\n\
                          2. Provide an executive summary of key modifications.\n\
                          3. Group changes by document headings or sheet sections."
-                    )
+                    ),
                 )
             }
             _ => return Err(failure(rpc::INVALID_PARAMS, "Unknown prompt")),

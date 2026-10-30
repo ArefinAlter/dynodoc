@@ -2702,3 +2702,5 @@ The paired Dynodoc branch adds an explicit Rust 1.85 MSRV CI check; results are 
 The paired Dynodoc security branch also removes raw upstream errors from demo provisioning, token-refresh, tick and unexpected-request logs; focused redaction tests are included.
 
 The paired Dynodoc security branch adds a durable, bounded and fair retirement queue with retry cooldown, expires unused ready sandboxes after 24 hours, caps claimed access at 24 hours, and removes local demo notes on successful retirement. Thirteen focused service tests pass. Documents remain in soft trash; permanent erasure and backup retention are not yet implemented.
+
+The paired security branches make Dynodoc MCP read-only unless a trusted per-request human confirmation sink is supplied. The stock CLI refuses write mode until such a user-facing confirmation surface is implemented. Security regressions are pending CI.

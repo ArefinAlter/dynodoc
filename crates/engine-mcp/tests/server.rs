@@ -44,10 +44,28 @@ fn server() -> (Server<Scripted>, Scripted) {
     (Server::new(backend.clone(), Profile::read_only()), backend)
 }
 
+struct TestConfirmation(bool);
+impl engine_mcp::server::HumanConfirmation for TestConfirmation {
+    fn confirm<'a>(
+        &'a self,
+        _: Tool,
+        _: &'a serde_json::Map<String, Value>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+        Box::pin(async move { self.0 })
+    }
+}
+
 /// The profile of `engine-cli mcp --write`.
 fn full_server() -> (Server<Scripted>, Scripted) {
     let backend = Scripted::default();
-    (Server::new(backend.clone(), Profile::full()), backend)
+    (
+        Server::with_human_confirmation(
+            backend.clone(),
+            Profile::full(),
+            Arc::new(TestConfirmation(true)),
+        ),
+        backend,
+    )
 }
 
 /// Feed `input` and return every line the server wrote.
@@ -486,6 +504,44 @@ async fn the_loop_ends_cleanly_at_end_of_input() {
     assert!(run(&server, "\n\n").await.is_empty());
 }
 
+#[tokio::test]
+async fn write_tools_need_a_trusted_per_request_confirmation() {
+    let backend = Scripted::default();
+    let no_sink = Server::new(backend.clone(), Profile::full());
+    let listed = one(&no_sink, request(1, "tools/list", json!({}))).await;
+    assert!(!listed["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["name"] == "propose"));
+    let refused = one(
+        &no_sink,
+        request(
+            2,
+            "tools/call",
+            json!({"name":"propose", "arguments": propose_call(json!([{ "op": "delete", "ref": "7C02" }]))}),
+        ),
+    )
+    .await;
+    assert_eq!(refused["error"]["code"], -32602);
+    let deny = Server::with_human_confirmation(
+        backend.clone(),
+        Profile::full(),
+        Arc::new(TestConfirmation(false)),
+    );
+    let refused = one(
+        &deny,
+        request(
+            3,
+            "tools/call",
+            json!({"name":"propose", "arguments": propose_call(json!([{ "op": "delete", "ref": "7C02" }]))}),
+        ),
+    )
+    .await;
+    assert_eq!(refused["result"]["isError"], true);
+    assert!(backend.seen.lock().unwrap().is_empty());
+}
+
 // --- the full profile (`--write`) ---------------------------------------------------------------
 
 const PROPOSAL: &str = "4d0e9b1c-5f2a-4b8e-9c31-0a7d6e2f8b14";
@@ -793,19 +849,29 @@ async fn test_resources_list_and_read() {
 
     let read_reply = one(
         &server,
-        request(2, "resources/read", json!({"uri": "dynodoc://schema/document-ir"})),
+        request(
+            2,
+            "resources/read",
+            json!({"uri": "dynodoc://schema/document-ir"}),
+        ),
     )
     .await;
     let contents = &read_reply["result"]["contents"];
     assert_eq!(contents[0]["uri"], "dynodoc://schema/document-ir");
-    assert!(contents[0]["text"].as_str().unwrap().contains("Dynodoc Document Event IR"));
+    assert!(contents[0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("Dynodoc Document Event IR"));
 
     let proj_reply = one(
         &server,
         request(3, "resources/read", json!({"uri": "dynodoc://projects"})),
     )
     .await;
-    assert!(proj_reply["result"]["contents"][0]["text"].as_str().unwrap().contains("dynodoc"));
+    assert!(proj_reply["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("dynodoc"));
 }
 
 #[tokio::test]
@@ -820,28 +886,31 @@ async fn test_prompts_list_and_get() {
 
     let get_reply = one(
         &server,
-        request(2, "prompts/get", json!({
-            "name": "audit_document_history",
-            "arguments": {
-                "file": "Handbook.docx",
-                "branch": "main"
-            }
-        })),
+        request(
+            2,
+            "prompts/get",
+            json!({
+                "name": "audit_document_history",
+                "arguments": {
+                    "file": "Handbook.docx",
+                    "branch": "main"
+                }
+            }),
+        ),
     )
     .await;
     let msg = &get_reply["result"]["messages"][0];
     assert_eq!(msg["role"], "user");
-    assert!(msg["content"]["text"].as_str().unwrap().contains("Handbook.docx"));
+    assert!(msg["content"]["text"]
+        .as_str()
+        .unwrap()
+        .contains("Handbook.docx"));
 }
 
 #[tokio::test]
 async fn test_snake_case_tool_aliases() {
     let (server, backend) = server();
-    let reply = one(
-        &server,
-        call(1, "dynodoc_status", json!({})),
-    )
-    .await;
+    let reply = one(&server, call(1, "dynodoc_status", json!({}))).await;
     assert_eq!(reply["result"]["isError"].as_bool(), None);
     let seen = backend.seen.lock().unwrap();
     assert_eq!(seen.len(), 1);
