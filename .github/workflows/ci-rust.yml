@@ -13,16 +13,9 @@ on:
       - "infra/demo/test_package_source.py"
       - ".github/workflows/ci-rust.yml"
   pull_request:
-    paths:
-      - "crates/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "migrations/**"
-      - "openapi.yaml"
-      - "infra/demo/package-source.py"
-      - "infra/demo/test_package_source.py"
-      - ".github/workflows/ci-rust.yml"
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-rust-${{ github.ref }}
@@ -30,6 +23,7 @@ concurrency:
 
 jobs:
   build-test:
+    name: Rust build and test
     runs-on: ubuntu-latest
     services:
       postgres:
